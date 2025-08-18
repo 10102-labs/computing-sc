@@ -3,6 +3,6 @@
 pragma solidity 0.8.20;
 
 interface ISafeGuard {
-  function initialize(address _safeWallet) external;
+  function initialize() external;
   function getLastTimestampTxs() external view returns (uint256);
 }

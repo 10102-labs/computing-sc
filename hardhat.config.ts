@@ -1,25 +1,50 @@
 import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomicfoundation/hardhat-verify";
+import "hardhat-contract-sizer";
+import "hardhat-deploy";
+import "hardhat-deploy-ethers";
+import "@nomiclabs/hardhat-ethers";
+import "@nomicfoundation/hardhat-toolbox";
 
 dotenv.config();
 
 const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
+  namedAccounts: {
+    deployer: {
+      default: 0,
+    },
+    dev: {
+      // Default to 1
+      default: 1,
+      // dev address mainnet
+      // 1: "",
+    },
+  },
   networks: {
+
+    // hardhat: {
+    //   chainId: 1337,
+
+    // },
     hardhat: {
       forking: {
-        url: process.env.SEPOLIA_RPC_URL as string,
-        blockNumber: 6196638,
-        enabled: true,
+        url: process.env.RPC as string,
+        // blockNumber: 8840301
       },
-      gas: "auto",
     },
+
     sepolia: {
-      url: process.env.SEPOLIA_RPC_URL as string,
-      chainId: Number(process.env.SEPOLIA_CHAIN_ID),
+      url: "https://eth-sepolia.public.blastapi.io",
+      chainId: 11155111,
+      gasPrice: "auto",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY as string] : [],
+    },
+    mainnet: {
+      url: "https://ethereum-rpc.publicnode.com",
+      chainId: 1,
       gasPrice: "auto",
       accounts: process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY as string] : [],
     },
@@ -31,23 +56,25 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
+      viaIR : true, // Enable viaIR for better optimization
     },
   },
   etherscan: {
     apiKey: {
       sepolia: process.env.API_KEY_ETHERSCAN as string,
+      mainnet: process.env.API_KEY_ETHERSCAN as string,
     },
   },
   sourcify: {
     enabled: true,
   },
-  watcher: {
-    compilation: {
-      tasks: ["compile"],
-      files: ["./contracts"],
-      verbose: true,
-    },
-  },
+  // watcher: {
+  //   compilation: {
+  //     tasks: ["compile"],
+  //     files: ["./contracts"],
+  //     verbose: true,
+  //   },
+  // },
   contractSizer: {
     alphaSort: true,
     disambiguatePaths: false,
