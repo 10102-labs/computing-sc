@@ -1,0 +1,1007 @@
+import Web3 from "web3";
+import { ethers, network } from "hardhat";
+import { BigNumber, ethers as ethersI } from "ethers";
+import { assert } from "console";
+
+import { currentBlock, currentTime, increase, increaseTo } from "./utils/time";
+import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
+
+
+import { expect, use } from "chai";
+import { parseEther, parseUnits } from "ethers/lib/utils";
+import { seconds } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time/duration";
+import { LinkTokenInterface, PremiumNotification, ProxyAmin__factory, IKeeperRegistryMaster__factory, PremiumMailRouter } from "../.../../typechain-types";
+
+async function genMessage(
+
+    legacyAddress: string,
+    timestamp: number): Promise<string> {
+
+    const message = `I agree to legacy at address ${legacyAddress.toLowerCase()} at timestamp ${timestamp}`;
+    return message;
+}
+
+const web3 = new Web3(process.env.RPC!);
+const user_pk = process.env.DEPLOYER_PRIVATE_KEY;
+
+const user = web3.eth.accounts.privateKeyToAccount(user_pk!).address;
+const wallet = web3.eth.accounts.privateKeyToAccount(user_pk!);
+
+
+
+
+describe("Premium Automation ", async function () {
+    this.timeout(250000);
+    const ONE_YEAR_PRICE = 1000;
+    const FIVE_YEARS_PRICE = 2500;
+    const LIFETIME_PRICE = 5000;
+
+    const ONE_YEAR = 86400 * 365;
+    const FIVE_YEARS = 86400 * 365 * 5;
+    const LIFETIME = ethers.constants.MaxUint256;
+
+    const routerUniswap = "0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008";
+    const weth = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9";
+
+
+
+    const notification = "0x02f486A3b571d938C51FC24f7a0B6251285b5032";
+    const mailRouter = "0x01e8FBE1Bc34D73d86A61EbC24A0e9509C0B8799"; // mail router
+    const mailBeforeActivation = "0x5C49EC40F5a512e2c4181bE1064CaCD55a930f16";
+    const mailReadyToActivate = "0xDf105CA77a010860bf08fE52E454A2D5755354c6";
+    const mailActivated = "0x05C807580CC173D2960304e870f4326a10E9A22C";
+
+    //CHAINLINK AUTOMATION VARIABLES
+    const i_link = "0x779877A7B0D9E8603169DdbD7836e478b4624789";
+    const i_registrar = "0xb0E49c5D0d05cbc241d68c05BC5BA1d1B7B72976";
+    const keeperRegistry = "0x86EFBD0b6736Bed994962f9797049422A3A8E8Ad"
+
+    //PUSH NOTIFICATION VARIABLES
+    const enpsComm = "0x0C34d54a09CFe75BCcd878A469206Ae77E0fe6e7";
+    const channel = "0x944A402a91c3D6663f5520bFe23c1c1eE77BCa92";
+
+    //CHAINLINK FUNCTION VARIABLES
+    const router = "0xb83E47C2bC239B3bf370bc41e1459A34b41238D0"; //fix for sepolia
+    const subcriptionId = 5168;
+    const donID = "0x66756e2d657468657265756d2d7365706f6c69612d3100000000000000000000" // fix for sepolia
+    const gasLimit = "300000";
+
+
+    function emailMapping(addr: string, email: string, name: string) {
+        return { addr, email, name };
+    }
+    async function deployFixture() {
+        const [treasury, user1, user2, user3] = await ethers.getSigners(); // Get the first signer (default account)
+
+        await network.provider.request({
+            method: "hardhat_impersonateAccount",
+            params: ["0x944a402a91c3d6663f5520bfe23c1c1ee77bca92"],
+        });
+
+        const dev = await ethers.getSigner("0x944a402a91c3d6663f5520bfe23c1c1ee77bca92");
+
+
+        const link = (await ethers.getContractAt("LinkTokenInterface", i_link)) as LinkTokenInterface;
+
+
+        const PremiumAutomationMananger = await ethers.getContractFactory("PremiumAutomationManager");
+        const premiumAutomationManager = await PremiumAutomationMananger.deploy();
+        await premiumAutomationManager.connect(dev).initialize();
+
+        await link.connect(dev).transfer(premiumAutomationManager.address, parseEther("100"));
+
+        //Premium
+        const ERC20 = await ethers.getContractFactory("ERC20Token");
+        const usdt = await ERC20.deploy("USDT", "USDT", 6);
+        const usdc = await ERC20.deploy("USDC", "USDC", 6);
+
+        const Payment = await ethers.getContractFactory("Payment");
+        const payment = await Payment.deploy();
+
+
+        const PremiumSetting = await ethers.getContractFactory("PremiumSetting");
+        const setting = await PremiumSetting.deploy();
+        await setting.connect(dev).initialize();
+
+        const PremiumRegistry = await ethers.getContractFactory("PremiumRegistry");
+        const registry = await PremiumRegistry.deploy();
+        await registry.connect(dev).initialize(usdt.address, usdc.address,
+            "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+            "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+            "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+            setting.address,
+            payment.address
+        );
+        const VerifierTerm = await ethers.getContractFactory("EIP712LegacyVerifier");
+        const verifierTerm = await VerifierTerm.deploy();
+        await verifierTerm.initialize(dev.address);
+
+
+        const TransferEOALegacyRouter = await ethers.getContractFactory("TransferEOALegacyRouter");
+        const transferEOALegacyRouter = await TransferEOALegacyRouter.deploy();
+        await transferEOALegacyRouter.initialize(setting.address, verifierTerm.address, payment.address); // fork setting contract 
+        await transferEOALegacyRouter.setSwapSettings(router, weth);
+
+        const TransferLegacyRouter = await ethers.getContractFactory("TransferLegacyRouter");
+        const transferLegacyRouter = await TransferLegacyRouter.deploy();
+        await transferLegacyRouter.initialize(setting.address, verifierTerm.address, payment.address);
+        await transferLegacyRouter.setSwapSettings(router, weth);
+
+
+
+        await verifierTerm.connect(dev).setRouterAddresses(transferEOALegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
+
+        const proxyAdmin = ProxyAmin__factory.connect("0x04F77bbc5AE606e0e1424A6e85762a95114AcBe4", dev);
+
+
+
+        const premiumNotification = (await ethers.getContractAt("PremiumNotification", notification)) as PremiumNotification;
+        //deploy local notification and upgrade
+        const PremiumNotification = await ethers.getContractFactory("PremiumNotification");
+        const premiumNotificationV2 = await PremiumNotification.deploy();
+        await proxyAdmin.connect(dev).upgrade(premiumNotification.address, premiumNotificationV2.address);
+        await premiumNotification.connect(dev).setUpPush(enpsComm, channel, premiumAutomationManager.address, setting.address);
+
+
+        //deploy local sendmail and upgrade
+        const premiumMailRouter = (await ethers.getContractAt("PremiumMailRouter", mailRouter)) as PremiumMailRouter;
+        const PremiumMailRouter = await ethers.getContractFactory("PremiumMailRouter");
+        const PremiumMailRouterV2 = await PremiumMailRouter.deploy();
+        await proxyAdmin.connect(dev).upgrade(premiumMailRouter.address, PremiumMailRouterV2.address);
+
+        await premiumMailRouter.connect(dev).setParams(mailBeforeActivation,mailActivated, mailReadyToActivate , setting.address, premiumAutomationManager.address);
+
+        await premiumAutomationManager.connect(dev).setParams(i_link, i_registrar, keeperRegistry, setting.address, "500000", notification, premiumMailRouter.address, 150);
+
+        //set up
+        await setting.connect(dev).setParams(registry.address, transferEOALegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
+        await setting.connect(dev).setUpReminder(premiumAutomationManager.address, premiumNotification.address, premiumMailRouter.address);
+
+
+
+        //mint token for users
+        await usdt.mint(user1.address, 100000 * 10 ** 6); // 100K usdt
+        await usdc.mint(user1.address, 100000 * 10 ** 6); // 100K usdc
+
+
+        await usdt.mint(dev.address, 100000 * 10 ** 6); // 100K usdt
+        await usdc.mint(dev.address, 100000 * 10 ** 6); // 100K usdc
+
+
+        //subcribe plan
+        // admin set up plans
+        await registry.connect(dev).createPlans(
+            [ONE_YEAR, FIVE_YEARS, LIFETIME],
+            [ONE_YEAR_PRICE, FIVE_YEARS_PRICE, LIFETIME_PRICE],
+            ["ONE YEAR", "FIVE YEAR", "LIFETIME"],
+            ["", "", ""],
+            ["", "", ""]
+        )
+
+        // user subcribe for plan
+        await usdc.connect(dev).approve(registry.address, ethers.constants.MaxUint256);
+        await registry.connect(dev).subcribeWithUSDC(0);
+
+        return {
+            dev,
+            premiumAutomationManager,
+            link,
+            transferEOALegacyRouter,
+            setting,
+            registry,
+            usdc,
+            user1,
+            user2,
+            user3,
+            premiumNotification,
+            premiumMailRouter,
+            transferLegacyRouter
+        }
+
+    }
+    it("should deploy fixture successfully", async function () {
+        const { dev,
+            premiumAutomationManager,
+            link } = await loadFixture(deployFixture);
+
+        // await premiumAutomationManager.connect(dev).createCronjob(dev.address);
+    })
+
+    it("should send push noti successfully", async function () {
+        const { dev, premiumNotification } = await loadFixture(deployFixture);
+        console.log(await currentBlock());
+        await premiumNotification.connect(dev).sendPushNoti([dev.address], "Title", "Body");
+
+    })
+
+    // it("should set cronjob job for legacy", async function () {
+    //     const { dev,
+    //         premiumAutomationManager,
+    //         transferEOALegacyRouter,
+    //         link, setting,
+    //         registry, usdc, user1 } = await loadFixture(deployFixture);
+
+
+    //     //subcribe plan
+    //     // admin set up plans
+    //     await registry.createPlans(
+    //         [ONE_YEAR, FIVE_YEARS, LIFETIME],
+    //         [ONE_YEAR_PRICE, FIVE_YEARS_PRICE, LIFETIME_PRICE],
+    //         ["ONE YEAR", "FIVE YEAR", "LIFETIME"],
+    //         ["", "", ""],
+    //         ["", "", ""]
+    //     )
+
+    //     // user subcribe for plan
+    //     await usdc.connect(dev).approve(registry.address, ethers.constants.MaxUint256);
+    //     const planPriceUSDC = await registry.getPlanPriceUSDC(0);
+    //     console.log({ planPriceUSDC });
+    //     await registry.connect(dev).subcribeWithUSDC(0);
+
+
+    //     const mainConfig = {
+    //         name: "abc",
+    //         note: "nothing",
+    //         nickNames: ["dadad"],
+    //         distributions: [
+    //             {
+    //                 user: "0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae",
+    //                 percent: 100
+    //             }
+    //         ]
+    //     };
+
+    //     const extraConfig = {
+    //         lackOfOutgoingTxRange: 86400,
+    //         delayLayer2: 86400,
+    //         delayLayer3: 86400
+    //     };
+
+    //     const layer2Distribution = {
+    //         user: "0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b",
+    //         percent: 100
+    //     };
+
+    //     const layer3Distribution = {
+    //         user: "0xa0e95ACC5ec544f040b89261887C0BBa113981AD",
+    //         percent: 100
+    //     };
+
+    //     const nickName2 = "daddd";
+    //     const nickName3 = "dat";
+    //     await transferEOALegacyRouter.connect(dev).createLegacy(
+    //         mainConfig,
+    //         extraConfig,
+    //         layer2Distribution,
+    //         layer3Distribution,
+    //         nickName2,
+    //         nickName3
+    //     );
+
+    //     const legacyAddress = await transferEOALegacyRouter.legacyAddresses(1);
+
+
+
+    //     //set reminder config
+    //     const name = "Dat";
+    //     const ownerEmail = "user1@example.com";
+    //     const timePriorActivation = 60 * 60 * 5;
+    //     const legacyData = [
+    //         {
+    //             cosigners: [],
+    //             beneficiaries: [
+    //                 emailMapping("0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae", "bene1@example.com"),
+    //             ],
+    //             secondLine: emailMapping("0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b", "second1@example.com"),
+    //             thirdLine: emailMapping("0xa0e95ACC5ec544f040b89261887C0BBa113981AD", "third1@example.com"),
+    //         },
+    //     ];
+
+    //     await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+
+    //     //merger tx 
+    //     // await premiumAutomationManager.connect(dev).createCronjob(dev.address);
+    //     // await premiumAutomationManager.connect(dev).addLegacy(dev.address, [legacyAddress]);
+
+    //     await premiumAutomationManager.connect(dev).addLegacyCronjob(dev.address, [legacyAddress]);
+
+    //     let cronjobAddress = await premiumAutomationManager.cronjob(dev.address);
+    //     const cronjob = (await ethers.getContractAt("PremiumAutomation", cronjobAddress));
+
+    //     console.log(await cronjob.legacyContracts(0));
+
+    //     const legacy = await ethers.getContractAt("TransferEOALegacy", legacyAddress);
+    //     console.log(await legacy.getTriggerActivationTimestamp());
+    //     console.log(await setting.getTimeAhead(dev.address));
+    //     let checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+
+
+    //     await increase(3600 * 19);
+    //     // console.log(await currentTime());
+    //     // console.log(await legacy.getLayer());
+
+    //     //notify 1 - before layer 1 activation
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+
+    //     //notify 4 - ready to active 
+    //     await increase(3600 * 5);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+
+    //     //notify 2 - befor layer 2
+    //     await increase(3600 * 19);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+
+
+
+    //     //notify 5 - layer 2 ready to active
+    //     await increase(3600 * 6);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+
+    //     //notify 3 - before layer 3
+    //     await increase(3600 * 18);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+
+
+    //     //notify 6 - layer 3 ready to active
+    //     await increase(3600 * 9);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x");
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    //     console.log('Perform up keep');
+    //     await cronjob.performUpkeep(checkUpkeepData[1]);
+    //     checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+    //     console.log(checkUpkeepData);
+    //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+    // })
+
+    it("shoud send reminder transfer/ transfer EOA", async function () {
+        const { dev,
+            premiumAutomationManager,
+            transferEOALegacyRouter,
+            link, setting,
+            registry, usdc, user1, premiumNotification, premiumMailRouter, user3 } = await loadFixture(deployFixture);
+
+
+
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dadad"],
+            distributions: [
+                {
+                    user: "0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae",
+                    percent: 100
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: "0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b",
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: user3.address,
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+        const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
+        console.log(legacyAddress);
+        const currentTimestamp = (await currentTime());
+        const message = await genMessage(legacyAddress, currentTimestamp);
+        const signature = await wallet.sign(message).signature;
+
+
+        await transferEOALegacyRouter.connect(dev).createLegacy(
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+
+        //set reminder config
+        const name = "Dat";
+        const ownerEmail = "dat.tran2@sotatek.com";
+        const timePriorActivation = 60 * 60 * 5;
+        const legacyData = [
+            {
+                cosigners: [],
+                beneficiaries: [
+                    emailMapping("0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae", "dat.tran2@sotatek.com", "dat"),
+                ],
+                secondLine: emailMapping("0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b", "dat.tran2@sotatek.com", "dat"),
+                thirdLine: emailMapping(user3.address, "dat.tran2@sotatek.com", "dat"),
+            },
+        ];
+
+        await usdc.mint(dev.address, 1000 * 10 ** 6);
+        await usdc.connect(dev).approve(legacyAddress, 1000 * 10 ** 6);
+        await network.provider.send("hardhat_setBalance", [
+            legacyAddress,
+            "0x1000000000000000000" // 1 ETH
+        ]);
+
+        await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+        //await premiumAutomationManager.connect(dev).addLegacyCronjob(dev.address, [legacyAddress]);
+
+
+        let cronjobAddress = await premiumAutomationManager.cronjob(dev.address);
+        const cronjob = (await ethers.getContractAt("PremiumAutomation", cronjobAddress));
+
+        // console.log(await cronjob.legacyContracts(0));
+
+        const legacy = await ethers.getContractAt("TransferEOALegacy", legacyAddress);
+        console.log(await legacy.getTriggerActivationTimestamp());
+        console.log(await setting.getTimeAhead(dev.address));
+        let checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+
+
+        await increase(3600 * 19);
+        // console.log(await currentTime());
+        // console.log(await legacy.getLayer());
+
+        //notify 1 - before layer 1 activation
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+        //notify 4 - ready to active 
+        await increase(3600 * 5);
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+        // //notify 2 - befor layer 2
+        await increase(3600 * 19);
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+
+        //notify 5 - layer 2 ready to active
+        await increase(3600 * 6);
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+        //notify 3 - before layer 3
+        await increase(3600 * 18);
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+        //notify 6 - layer 3 ready to active
+        await increase(3600 * 9);
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+        await transferEOALegacyRouter.connect(user3).activeLegacy(1,[usdc.address], true);
+        console.log('Activated')
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+    })
+
+    it("should fund keepup if needed", async function () {
+
+        const { dev,
+            premiumAutomationManager,
+            transferEOALegacyRouter,
+            link, setting,
+            registry, usdc, user1, premiumNotification } = await loadFixture(deployFixture);
+
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dadad"],
+            distributions: [
+                {
+                    user: "0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae",
+                    percent: 100
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: "0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b",
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: "0xa0e95ACC5ec544f040b89261887C0BBa113981AD",
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+        const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
+        console.log(legacyAddress);
+        const currentTimestamp = (await currentTime());
+        const message = await genMessage(legacyAddress, currentTimestamp);
+        const signature = await wallet.sign(message).signature;
+
+
+        await transferEOALegacyRouter.connect(dev).createLegacy(
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+
+        //set reminder config
+        const name = "Dat";
+        const ownerEmail = "user1@example.com";
+        const timePriorActivation = 60 * 60 * 5;
+        const legacyData = [
+            {
+                cosigners: [],
+                beneficiaries: [
+                    emailMapping("0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae", "bene1@example.com", "dat"),
+                ],
+                secondLine: emailMapping("0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b", "second1@example.com", "dat"),
+                thirdLine: emailMapping("0xa0e95ACC5ec544f040b89261887C0BBa113981AD", "third1@example.com", "dat"),
+            },
+        ];
+
+        await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+        //await premiumAutomationManager.connect(dev).addLegacyCronjob(dev.address, [legacyAddress]);
+
+
+        let cronjobAddress = await premiumAutomationManager.cronjob(dev.address);
+        const cronjob = (await ethers.getContractAt("PremiumAutomation", cronjobAddress));
+        const keepUpId = await cronjob.keepupId();
+        console.log('Keepup ID', keepUpId);
+        const keeperRegistry = IKeeperRegistryMaster__factory.connect("0x86EFBD0b6736Bed994962f9797049422A3A8E8Ad", dev);
+        let keepUpBalance = await keeperRegistry.getBalance(keepUpId);
+        console.log('Keepup Balance', keepUpBalance);
+
+
+        // console.log(await cronjob.legacyContracts(0));
+
+        const legacy = await ethers.getContractAt("TransferEOALegacy", legacyAddress);
+        console.log(await legacy.getTriggerActivationTimestamp());
+        console.log(await setting.getTimeAhead(dev.address));
+        let checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+
+
+        await increase(3600 * 19);
+        // console.log(await currentTime());
+        // console.log(await legacy.getLayer());
+
+        //notify 1 - before layer 1 activation
+        checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        await cronjob.performUpkeep(checkUpkeepData[1]);
+        checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+
+        keepUpBalance = await keeperRegistry.getBalance(keepUpId);
+        console.log('Keepup Balance', keepUpBalance);
+
+
+    })
+
+    it("should trigger owner reset reminder", async function () {
+        const { dev,
+            premiumAutomationManager,
+            transferEOALegacyRouter,
+            link, setting,
+            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter } = await loadFixture(deployFixture);
+
+
+
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dat", "dat2"],
+            distributions: [
+                {
+                    user: user1.address,
+                    percent: 50
+                }, 
+                {
+                    user: "0x6f5e0e8B41CD7Fa814cD4eBe31dCD16F2Ef58372",
+                    percent: 50
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: user2.address,
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: user3.address,
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+        const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
+        const currentTimestamp = (await currentTime());
+        const message = await genMessage(legacyAddress, currentTimestamp);
+        const signature = await wallet.sign(message).signature;
+
+
+        await transferEOALegacyRouter.connect(dev).createLegacy(
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+
+        //set reminder config
+    //     const name = "Dat";
+    //     const ownerEmail = "dat.tran2@sotatek.com";
+    //     const timePriorActivation = 60 * 60 * 5;
+    //     const legacyData = [
+    //         {
+    //             cosigners: [],
+    //             beneficiaries: [
+    //                 emailMapping(user1.address, "dat.tran2@sotatek.com", "dat"),
+    //             ],
+    //             secondLine: emailMapping(user2.address, "dat.tran2@sotatek.com", "dat"),
+    //             thirdLine: emailMapping(user3.address, "dat.tran2@sotatek.com", "dat"),
+    //         },
+    //     ];
+
+    //    await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+
+    //     await increase(86400*2);
+
+    //     console.log(await transferEOALegacyRouter.checkActiveLegacy(1));
+
+    //     console.log('NotifyId', await premiumNotification.notifyId());
+    //     console.log('MailID', await premiumMailRouter.mailId());
+
+    //     await transferEOALegacyRouter.connect(dev).avtiveAlive(1);
+
+    //     console.log('NotifyId', await premiumNotification.notifyId());
+    //     console.log('MailID', await premiumMailRouter.mailId());
+
+
+    })
+
+    it.only("should trigger activation reminder", async function () {
+        const { dev,
+            premiumAutomationManager,
+            transferEOALegacyRouter,
+            link, setting,
+            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter } = await loadFixture(deployFixture);
+
+
+
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dadad", "dat2"],
+            distributions: [
+                {
+                    user: user1.address,
+                    percent: 50
+                },
+                {
+                    user: "0x6f5e0e8B41CD7Fa814cD4eBe31dCD16F2Ef58372",
+                    percent: 50
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: user2.address,
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: user3.address,
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+        const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
+        const currentTimestamp = (await currentTime());
+        const message = await genMessage(legacyAddress, currentTimestamp);
+        const signature = await wallet.sign(message).signature;
+
+
+        await transferEOALegacyRouter.connect(dev).createLegacy(
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+
+        //set reminder config
+        const name = "Dat";
+        const ownerEmail = "dat.tran2@sotatek.com";
+        const timePriorActivation = 60 * 60 * 5;
+        const legacyData = [
+            {
+                cosigners: [],
+                beneficiaries: [
+                    emailMapping(user1.address, "dat.tran2@sotatek.com", "dat"),
+                    emailMapping("0x6f5e0e8B41CD7Fa814cD4eBe31dCD16F2Ef58372", "dat.tran2@sotatek.com", "dat"),
+                ],
+                secondLine: emailMapping(user2.address, "dat.tran2@sotatek.com", "dat"),
+                thirdLine: emailMapping(user3.address, "dat.tran2@sotatek.com", "dat"),
+            },
+        ];
+
+        await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+
+        await increase(86400);
+
+        console.log(await transferEOALegacyRouter.checkActiveLegacy(1));
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+
+        await transferEOALegacyRouter.connect(user1).activeLegacy(1, [usdc.address], true);
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+
+    })
+
+    it("should not notify if guard is not set", async function () {
+        const { dev,
+            premiumAutomationManager,
+            transferEOALegacyRouter,
+            link, setting,
+            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter , transferLegacyRouter} = await loadFixture(deployFixture);
+
+       
+        
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dadad"],
+            distributions: [
+                {
+                    user: user2.address,
+                    percent: 100
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: user3.address,
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: "0xa0e95ACC5ec544f040b89261887C0BBa113981AD",
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+
+        const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
+        const legacyAddress = await transferLegacyRouter.getNextLegacyAddress(dev.address);
+        const currentTimestamp = (await currentTime());
+        const message = await genMessage(legacyAddress, currentTimestamp);
+        const signature = wallet.sign(message).signature;
+
+        await transferLegacyRouter.connect(dev).createLegacy(
+            safeWallet,
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+        console.log(legacyAddress);
+        const legacy = await ethers.getContractAt("TransferLegacy", legacyAddress);
+
+
+
+
+        const name = "Dat";
+        const ownerEmail = "user1@example.com";
+        const timePriorActivation = 60 * 60 * 5;
+        const legacyData = [
+            {
+                cosigners: [],
+                beneficiaries: [
+                    emailMapping(user2.address, "bene1@example.com", "dat"),
+                ],
+                secondLine: emailMapping( user3.address, "second1@example.com", "dat"),
+                thirdLine: emailMapping( "0xa0e95ACC5ec544f040b89261887C0BBa113981AD", "third1@example.com", "dat"),
+            },
+        ];
+
+        await setting.connect(dev).setReminderConfigs(name, ownerEmail, timePriorActivation, [legacyAddress], legacyData);
+        
+
+        let cronjobAddress = await premiumAutomationManager.cronjob(dev.address);
+        const cronjob = (await ethers.getContractAt("PremiumAutomation", cronjobAddress));
+
+        await increase(3600 * 19);
+        // console.log(await currentTime());
+        // console.log(await legacy.getLayer());
+
+        //notify 1 - before layer 1 activation
+        const checkUpkeepData = await cronjob.checkUpkeep("0x");
+        console.log(checkUpkeepData);
+        if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
+        console.log('Perform up keep');
+        console.log('NotifyId', await premiumNotification.notifyId());
+        console.log('MailID', await premiumMailRouter.mailId());
+
+
+    })
+
+    
+
+
+})

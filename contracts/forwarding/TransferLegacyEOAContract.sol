@@ -1,0 +1,664 @@
+// SPDX-License-Identifier: MIT
+// OpenZeppelin Contracts v5.x
+pragma solidity 0.8.20;
+
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {GenericLegacy} from "../common/GenericLegacy.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
+import {TransferLegacyStruct} from "../libraries/TransferLegacyStruct.sol";
+import {IPremiumSetting} from "../interfaces/IPremiumSetting.sol";
+import {ITransferEOALegacy} from "../interfaces/ITransferLegacyEOAContract.sol";
+import {IUniswapV2Router02} from "../interfaces/IUniswapV2Router02.sol";
+import {IPayment} from "../interfaces/IPayment.sol";
+import {IUniswapV2Factory} from "../interfaces/IUniswapV2Factory.sol";
+import {NotifyLib} from "../libraries/NotifyLib.sol";
+
+contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
+  using EnumerableSet for EnumerableSet.AddressSet;
+
+  /* Error */
+  error NotBeneficiary();
+  error DistributionUserInvalid();
+  error DistributionAssetInvalid();
+  error AssetInvalid();
+  error PercentInvalid();
+  error NotEnoughContitionalActive();
+  error ExecTransactionFromModuleFailed();
+  error BeneficiariesIsClaimed();
+  error LegacyIsDeleted();
+  error SafeTransfromFailed(address, address, address);
+  error NotEnoughETH();
+  error LayerInvalid();
+  error NotPremium();
+  error NeedtoSetLayer2();
+  error AlreadyBeneficiary();
+  error DelayAndDistributionInvalid();
+  error SwapFailed();
+  error InvalidPaymentContract();
+
+  /* State variable */
+  uint128 public constant LEGACY_TYPE = 3;
+  uint128 public constant MAX_TRANSFER = 100; 
+  uint256 public adminFeePercent; // Store fee percentage at initialization
+  address public paymentContract; // Store address for fee transfers
+  address public uniswapRouter; // Uniswap router address for swapping
+  address public weth; // WETH address for swapping
+
+  uint256 private _lastTimestamp;
+  uint256 private _isLive = 1;
+
+  EnumerableSet.AddressSet private _beneficiariesSet;
+  mapping(address beneficiaries => uint256) private _distributions;
+  address private _layer2Beneficiary;
+  uint256 private _layer2Distribution;
+  address private _layer3Beneficiary;
+  uint256 private _layer3Distribution;
+
+  uint256 public delayLayer2;
+  uint256 public delayLayer3;
+
+  IPremiumSetting public premiumSetting;
+  address public creator;
+
+  modifier onlyLive() {
+    if (_isLive != 1) {
+      revert LegacyIsDeleted();
+    }
+    _;
+  }
+
+  function _swapAdminFee(address token, uint256 amountIn) internal {
+    if (uniswapRouter == address(0) || weth == address(0) || paymentContract == address(0)) {
+      revert InvalidPaymentContract();
+    }
+
+    // Approve token for router
+    IERC20(token).approve(uniswapRouter, amountIn);
+
+    address[] memory path = new address[](2);
+    path[0] = token;
+    path[1] = weth;
+
+    try
+      IUniswapV2Router02(uniswapRouter).swapExactTokensForETH(
+        amountIn,
+        0, // accept any amount of ETH
+        path,
+        paymentContract,
+        block.timestamp + 300
+      )
+    {} catch {
+      IERC20(token).transfer(paymentContract, amountIn);
+    }
+  }
+
+  /* View functions to support premium */
+  function isLive() public view override returns (bool) {
+    return (_isLive == 1) && (getIsActiveLegacy() == 1);
+  }
+
+  function getTriggerActivationTimestamp() public view override returns (uint256, uint256, uint256) {
+    uint256 lackOfOutgoingTxRange = uint256(getActivationTrigger());
+    uint256 beneficiariesTrigger = _lastTimestamp + lackOfOutgoingTxRange;
+    uint256 layer2Trigger = beneficiariesTrigger + delayLayer2;
+    uint256 layer3Trigger = layer2Trigger + delayLayer3;
+    return (beneficiariesTrigger, layer2Trigger, layer3Trigger);
+  }
+
+  function getLegacyBeneficiaries() public view override returns (address[] memory, address, address) {
+    return (_beneficiariesSet.values(), _layer2Beneficiary, _layer3Beneficiary);
+  }
+
+  function getLayer() public view override returns (uint8) {
+    return getCurrentLayer();
+  }
+
+  function getLastTimestamp() public view override returns (uint256) {
+    return _lastTimestamp;
+  }
+
+  /* View function */
+  function getBeneficiaries(address bene_) public view returns (address[] memory) {
+    uint8 currentLayer_ = getBeneficiaryLayer(bene_);
+    if (currentLayer_ == 1) return _beneficiariesSet.values();
+    else if (currentLayer_ == 2) {
+      address[] memory beneficiaries = new address[](1);
+      beneficiaries[0] = _layer2Beneficiary;
+      return beneficiaries;
+    } else if (currentLayer_ == 3) {
+      address[] memory beneficiaries = new address[](1);
+      beneficiaries[0] = _layer3Beneficiary;
+      return beneficiaries;
+    } else revert LayerInvalid();
+  }
+
+  function getDistribution(uint8 layer, address beneficiary) public view returns (uint256) {
+    if (layer == 1) {
+      return _distributions[beneficiary];
+    } else if (layer == 2) {
+      if (beneficiary == _layer2Beneficiary) {
+        return _layer2Distribution;
+      } else {
+        return 0;
+      }
+    } else if (layer == 3) {
+      if (beneficiary == _layer3Beneficiary) {
+        return _layer3Distribution;
+      } else {
+        return 0;
+      }
+    } else {
+      return 0;
+    }
+  }
+
+  /**
+   * @dev Get the layer of a specific beneficiary
+   * @param beneficiary The address of the beneficiary
+   * @return uint8 The layer of the beneficiary (1 for First-line, 2 for Second-line, 3 for Third-line, 0 if not a beneficiary)
+   */
+  function getBeneficiaryLayer(address beneficiary) public view returns (uint8) {
+    if (_distributions[beneficiary] > 0) {
+      return 1;
+    } else if (beneficiary == _layer2Beneficiary && _layer2Distribution > 0) {
+      return 2;
+    } else if (beneficiary == _layer3Beneficiary && _layer3Distribution > 0) {
+      return 3;
+    }
+    return 0;
+  }
+
+  function getCurrentLayer() internal view returns (uint8) {
+    uint256 ts = block.timestamp;
+    uint256 lackOfOutgoingTxRange = getActivationTrigger();
+    uint256 base = (_lastTimestamp + lackOfOutgoingTxRange);
+    if (ts >= base + delayLayer2 + delayLayer3 && delayLayer3 != 0) {
+      return 3;
+    } else if (ts >= base + delayLayer2 && delayLayer2 != 0) {
+      return 2;
+    } else {
+      return 1;
+    }
+  }
+
+  /**
+   * @dev Check activation conditions
+   * @return bool true if eligible for activation, false otherwise
+   */
+  function checkActiveLegacy() external view returns (bool) {
+    return _checkActiveLegacy();
+  }
+
+  /* Main function */
+  /**
+   * @dev Intialize info legacy
+   * @param legacyId_ legacy id
+   * @param owner_ owner of legacy
+   * @param distributions_ ditributions list
+   * @param config_ include lackOfOutgoingTxRange
+   */
+  function initialize(
+    uint256 legacyId_,
+    address owner_,
+    TransferLegacyStruct.Distribution[] calldata distributions_,
+    TransferLegacyStruct.LegacyExtraConfig calldata config_,
+    TransferLegacyStruct.Distribution calldata layer2Distribution_,
+    TransferLegacyStruct.Distribution calldata layer3Distribution_,
+    address _premiumSetting,
+    address _paymentContract,
+    address _uniswapRouter,
+    address _weth,
+    string[] calldata nicknames,
+    string calldata nickname2,
+    string calldata nickname3
+  ) external notInitialized returns (uint256 numberOfBeneficiaries) {
+    if (owner_ == address(0)) revert OwnerInvalid();
+    uniswapRouter = _uniswapRouter;
+    weth = _weth;
+    _setLegacyInfo(legacyId_, owner_, 1, config_.lackOfOutgoingTxRange, msg.sender);
+    premiumSetting = IPremiumSetting(_premiumSetting);
+    paymentContract = _paymentContract;
+    adminFeePercent = IPayment(paymentContract).getFee();
+    if (adminFeePercent > 10000) revert PercentInvalid();
+    creator = owner_;
+
+    // Check duplicates across layers BEFORE setting anything
+    address l2User = layer2Distribution_.user;
+    address l3User = layer3Distribution_.user;
+
+    for (uint256 i = 0; i < distributions_.length; ++i) {
+      address user = distributions_[i].user;
+      if (user == address(0)) continue;
+
+      if (user == l2User || user == l3User) {
+        revert AlreadyBeneficiary();
+      }
+    }
+
+    if (premiumSetting.isPremium(creator)) {
+      delayLayer2 = config_.delayLayer2;
+      delayLayer3 = config_.delayLayer3;
+      _setLayer23Distributions(2, nickname2, layer2Distribution_);
+      _setLayer23Distributions(3, nickname3, layer3Distribution_);
+      if (!_checkDelayAndDistribution()) revert DelayAndDistributionInvalid();
+    } else {
+      // Check input values before assigning them to state
+      if (
+        config_.delayLayer2 != 0 ||
+        config_.delayLayer3 != 0 ||
+        layer2Distribution_.percent != 0 ||
+        layer3Distribution_.percent != 0 ||
+        layer2Distribution_.user != address(0) ||
+        layer3Distribution_.user != address(0)
+      ) {
+        revert NotPremium();
+      }
+    }
+
+    numberOfBeneficiaries = _setDistributions(owner_, distributions_, nicknames);
+    _lastTimestamp = block.timestamp;
+  }
+
+  function _checkDelayAndDistribution() internal view returns (bool) {
+    // Case 1: All default values (for non-premium users)
+    if (delayLayer2 == 0 && _layer2Distribution == 0 && delayLayer3 == 0 && _layer3Distribution == 0) {
+      return true;
+    }
+
+    // Case 2: Only layer2 is set (premium users)
+    if (delayLayer2 != 0 && _layer2Distribution == 100 && delayLayer3 == 0 && _layer3Distribution == 0) {
+      return true;
+    }
+
+    // Case 3: Both layers are set (premium users)
+    if (delayLayer2 != 0 && _layer2Distribution == 100 && delayLayer3 != 0 && _layer3Distribution == 100) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function _setLayer23Distributions(uint8 layer_, string calldata nickname, TransferLegacyStruct.Distribution calldata distribution_) private {
+    uint256 _distributionPercentage;
+    address _beneficiary;
+    if (distribution_.percent == 0) {
+      _distributionPercentage = 0;
+      _beneficiary = address(0);
+    } else {
+      _distributionPercentage = 100;
+      if (distribution_.user == address(0)) revert DistributionUserInvalid();
+      _beneficiary = distribution_.user;
+    }
+    if (layer_ == 2) {
+      if (_distributions[distribution_.user] != 0) revert AlreadyBeneficiary();
+      _deleteBeneName(_layer2Beneficiary);
+      _layer2Beneficiary = _beneficiary;
+      _layer2Distribution = _distributionPercentage;
+      _setBeneNickname(_layer2Beneficiary, nickname);
+    } else {
+      if (_layer2Distribution != 100 && _distributionPercentage != 0) revert NeedtoSetLayer2();
+      if (_distributionPercentage != 0) {
+        if (_layer2Distribution != 100) revert NeedtoSetLayer2();
+        if (_distributions[distribution_.user] != 0 || _layer2Beneficiary == distribution_.user) revert AlreadyBeneficiary();
+      }
+      _deleteBeneName(_layer3Beneficiary);
+      _layer3Beneficiary = _beneficiary;
+      _layer3Distribution = _distributionPercentage;
+      _setBeneNickname(_layer3Beneficiary, nickname);
+    }
+  }
+
+  function setLayer23Distributions(
+    address sender_,
+    uint8 layer_,
+    string calldata nickname,
+    TransferLegacyStruct.Distribution calldata distribution_
+  ) external onlyRouter onlyOwner(sender_) isActiveLegacy {
+    if (layer_ < 2 || layer_ > 3) revert LayerInvalid();
+    if (distribution_.user == address(0)) revert DistributionUserInvalid();
+    if (!premiumSetting.isPremium(sender_)) revert NotPremium();
+
+    _setLayer23Distributions(layer_, nickname, distribution_);
+    if (!_checkDelayAndDistribution()) revert DelayAndDistributionInvalid();
+  }
+
+  function setDelayLayer23(address sender_, uint256 delayLayer2_, uint256 delayLayer3_) external onlyRouter onlyOwner(sender_) isActiveLegacy {
+    if (!premiumSetting.isPremium(sender_)) revert NotPremium();
+    delayLayer2 = delayLayer2_;
+    delayLayer3 = delayLayer3_;
+    if (!_checkDelayAndDistribution()) revert DelayAndDistributionInvalid();
+  }
+
+  /**
+   * @dev set distributions[]
+   * @param sender_  sender address
+   * @param distributions_ ditributions
+   */
+  function setLegacyDistributions(
+    address sender_,
+    TransferLegacyStruct.Distribution[] calldata distributions_,
+    string[] calldata nicknames_
+  ) external onlyRouter onlyLive onlyOwner(sender_) isActiveLegacy returns (uint256 numberOfBeneficiaries) {
+    _clearDistributions();
+    numberOfBeneficiaries = _setDistributions(sender_, distributions_, nicknames_);
+
+    _lastTimestamp = block.timestamp;
+  }
+
+  function setDelayAndLayer23Distributions(
+    address sender_,
+    uint256 delayLayer2_,
+    uint256 delayLayer3_,
+    string calldata nickName2,
+    string calldata nickName3,
+    TransferLegacyStruct.Distribution calldata layer2Distribution_,
+    TransferLegacyStruct.Distribution calldata layer3Distribution_
+  ) external onlyRouter onlyOwner(sender_) isActiveLegacy {
+    // Check if user is premium
+    bool isPremium = premiumSetting.isPremium(sender_);
+
+    if (!isPremium) {
+      //For non-premium users, only allow setting to default values
+      if (
+        delayLayer2_ != 0 ||
+        delayLayer3_ != 0 ||
+        layer2Distribution_.percent != 0 ||
+        layer3Distribution_.percent != 0 ||
+        layer2Distribution_.user != address(0) ||
+        layer3Distribution_.user != address(0)
+      ) {
+        revert NotPremium();
+      }
+      // Don't change values for non-premium users
+      return;
+    }
+
+    // For premium users, proceed with normal logic
+    delayLayer2 = delayLayer2_;
+    delayLayer3 = delayLayer3_;
+
+    _setLayer23Distributions(2, nickName2, layer2Distribution_);
+
+    bool skipCheck = true;
+    if (layer3Distribution_.percent > 0 && layer3Distribution_.user != address(0)) {
+      if (_layer2Beneficiary == layer3Distribution_.user || _distributions[layer3Distribution_.user] != 0) {
+        revert AlreadyBeneficiary();
+      }
+      _deleteBeneName(_layer3Beneficiary);
+      _layer3Beneficiary = layer3Distribution_.user;
+      _layer3Distribution = 100;
+      _setBeneNickname(_layer3Beneficiary, nickName3);
+      skipCheck = false;
+    } else {
+      _layer3Beneficiary = address(0);
+      _layer3Distribution = 0;
+    }
+
+    if (!skipCheck && !_checkDelayAndDistribution()) {
+      revert DelayAndDistributionInvalid();
+    }
+  }
+
+  /**
+   * @dev Set lackOfOutgoingTxRange legacy
+   * @param sender_  sender
+   * @param lackOfOutgoingTxRange_  lackOfOutgoingTxRange
+   */
+  function setActivationTrigger(address sender_, uint256 lackOfOutgoingTxRange_) external onlyRouter onlyLive onlyOwner(sender_) isActiveLegacy {
+    _setActivationTrigger(lackOfOutgoingTxRange_);
+
+    _lastTimestamp = block.timestamp;
+  }
+
+  /**
+   * @dev mark to the owner is still alive
+   */
+  function activeAlive(address sender_) external onlyRouter onlyLive onlyOwner(sender_) isActiveLegacy {
+    _lastTimestamp = block.timestamp;
+  }
+
+  function deleteLegacy(address sender_) external onlyRouter onlyLive onlyOwner(sender_) isActiveLegacy {
+    _isLive = 2;
+    _lastTimestamp = block.timestamp;
+
+    payable(sender_).transfer(address(this).balance);
+  }
+
+  receive() external payable onlyLive {
+    if (msg.sender == getLegacyOwner()) {
+      _lastTimestamp = block.timestamp;
+    }
+  }
+
+  /**
+   * @dev withdraw ETH
+   */
+  function withdraw(address sender_, uint256 amount_) external onlyRouter onlyLive onlyOwner(sender_) {
+    if (address(this).balance < amount_) {
+      revert NotEnoughETH();
+    }
+    _lastTimestamp = block.timestamp;
+    payable(sender_).transfer(amount_);
+  }
+
+  /**
+   * @param assets erc20 token list
+   * @param isETH_ check is native token
+   */
+  function activeLegacy(
+    address[] calldata assets_,
+    bool isETH_,
+    address bene
+  ) external onlyRouter onlyLive returns (address[] memory assets, uint8 layer) {
+    if (_checkActiveLegacy()) {
+      if (getIsActiveLegacy() == 1) {
+        _setLegacyToInactive();
+      }
+      (assets, layer) = _transferAssetToBeneficiaries(assets_, isETH_, bene);
+    } else {
+      revert NotEnoughContitionalActive();
+    }
+  }
+
+  function setLegacyName(string calldata legacyName_) external onlyRouter onlyLive {
+    _setLegacyName(legacyName_);
+  }
+
+  /* Utils function */
+
+  /**
+   * @dev Check activation conditions
+   * @return bool true if eligible for activation, false otherwise
+   */
+  function _checkActiveLegacy() private view returns (bool) {
+    uint256 lackOfOutgoingTxRange = getActivationTrigger();
+    if (_lastTimestamp + lackOfOutgoingTxRange > block.timestamp) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * @dev set ditribution list
+   * @param owner_ address
+   * @param distributions_  distributions list
+   * @return numberOfBeneficiaries number of beneficiaries
+   */
+  function _setDistributions(
+    address owner_,
+    TransferLegacyStruct.Distribution[] calldata distributions_,
+    string[] calldata nicknames
+  ) internal returns (uint256 numberOfBeneficiaries) {
+    uint256 totalPercent = 0;
+
+    for (uint256 i = 0; i < distributions_.length; ) {
+      _checkDistribution(owner_, distributions_[i]);
+      _beneficiariesSet.add(distributions_[i].user);
+      _setBeneNickname(distributions_[i].user, nicknames[i]);
+      _distributions[distributions_[i].user] = distributions_[i].percent;
+      totalPercent += distributions_[i].percent;
+      unchecked {
+        i++;
+      }
+    }
+    if (totalPercent != 100) revert PercentInvalid();
+
+    numberOfBeneficiaries = _beneficiariesSet.length();
+  }
+
+  /**
+   * @dev clear distributions list
+   */
+  function _clearDistributions() internal {
+    address[] memory beneficiaries = _beneficiariesSet.values();
+    for (uint256 i = 0; i < beneficiaries.length; ) {
+      _deleteBeneName(beneficiaries[i]);
+      _beneficiariesSet.remove(beneficiaries[i]);
+      _distributions[beneficiaries[i]] = 0;
+      unchecked {
+        i++;
+      }
+    }
+  }
+
+  /**
+   * @dev check distribution
+   * @param owner_ owner legacy
+   * @param distribution_ distribution
+   */
+  function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private pure {
+    if (distribution_.percent == 0 || distribution_.percent > 100) revert DistributionAssetInvalid();
+    if (distribution_.user == address(0) || distribution_.user == owner_) revert DistributionAssetInvalid();
+  }
+
+  /**
+   * @dev transfer asset to beneficiaries
+   */
+  function _transferAssetToBeneficiaries(
+    address[] calldata assets_,
+    bool isETH_,
+    address bene_
+  ) private returns (address[] memory assets, uint8 currentLayer) {
+    address ownerAddress = getLegacyOwner();
+    address[] memory beneficiaries = getBeneficiaries(bene_);
+    currentLayer = getCurrentLayer();
+    uint8 beneLayer = getBeneficiaryLayer(bene_);
+    uint256 n = assets_.length;
+    uint256 maxTransfer = MAX_TRANSFER;
+
+    if (isETH_) {
+      maxTransfer = maxTransfer - beneficiaries.length;
+    } 
+    //actual number of assets claimed in this tranasaction
+    bool isRemaining  = false;
+    if (n * beneficiaries.length > maxTransfer) {
+      n = maxTransfer / beneficiaries.length;
+      isRemaining = true;
+    }
+
+    //prepare data to send mail
+    NotifyLib.BeneReceived[] memory receipt = new  NotifyLib.BeneReceived[](beneficiaries.length);
+    NotifyLib.ListAsset[] memory summary = new NotifyLib.ListAsset[](n + 1);
+    for(uint256 i = 0; i < beneficiaries.length; i++) {
+      receipt[i].beneAddress = beneficiaries[i];
+      receipt[i].name = getBeneNickname(beneficiaries[i]);
+      string[] memory listAssetName = new string[](n+1); // +1 for ETH 
+      uint256[] memory listAmount = new uint256[](n+1);
+      receipt[i].listAssetName = listAssetName;
+      receipt[i].listAmount = listAmount;
+
+    }
+
+    if (isETH_) {
+      uint256 totalAmountEth = address(this).balance;
+      uint256 fee = (totalAmountEth * adminFeePercent) / 10000;
+      uint256 distributableEth = totalAmountEth - fee;
+      if (fee > 0) {
+        _transferEthToBeneficiary(paymentContract, fee);
+      }
+      
+      summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: "ETH"});
+      for (uint256 i = 0; i < beneficiaries.length; ) {
+        uint256 amount = (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100;
+        if (amount > 0) {
+          _transferEthToBeneficiary(beneficiaries[i], amount);
+          receipt[i].listAssetName[n] = "ETH";
+          receipt[i].listAmount[n] = amount;
+        }
+        unchecked {
+          i++;
+        }
+      }
+      assets = new address[](1);
+      assets[0] = address(0);
+    }
+
+    assets = new address[](n);
+    for (uint256 i = 0; i < n; ) {
+      address token = assets_[i];
+      uint256 allowanceAmountErc20 = IERC20(token).allowance(ownerAddress, address(this));
+      uint256 balanceAmountErc20 = IERC20(token).balanceOf(ownerAddress);
+      uint256 totalAmount = balanceAmountErc20 > allowanceAmountErc20 ? allowanceAmountErc20 : balanceAmountErc20;
+
+      string memory symbol = IERC20(token).symbol();
+      summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmount, listAssetName: symbol});
+
+      uint256 fee = (totalAmount * adminFeePercent) / 10000;
+      uint256 distributable = totalAmount - fee;
+
+      if (fee > 0) {
+        bool feePullSuccess = IERC20(token).transferFrom(ownerAddress, address(this), fee);
+        if (!feePullSuccess) revert SafeTransfromFailed(token, ownerAddress, address(this));
+        _swapAdminFee(token, fee);
+      }
+      for (uint256 j = 0; j < beneficiaries.length; ) {
+        uint256 amount = (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100;
+        if (amount > 0) {
+          _transferErc20ToBeneficiary(token, ownerAddress, beneficiaries[j], amount);
+          receipt[j].listAssetName[i] = symbol;
+          receipt[j].listAmount[i] = amount;
+        }
+        unchecked {
+          j++;
+        }
+      }
+      assets[i] = token;
+      unchecked {
+        i++;
+      }
+    }
+    // send notification & email
+    IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(
+      summary,
+      receipt,
+      isRemaining
+    );
+
+    return (assets, currentLayer);
+  }
+
+  /**
+   * @dev transfer erc20 token to beneficiaries
+   * @param erc20Address_  erc20 token address
+   * @param from_ safe wallet address
+   * @param to_ beneficiary address
+   */
+  function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount_) private {
+    bool success = IERC20(erc20Address_).transferFrom(from_, to_, amount_);
+    if (!success) revert SafeTransfromFailed(erc20Address_, from_, to_);
+  }
+
+  /**
+   * @dev transfer eth to beneficiaries
+   * @param to_ beneficiary address
+   */
+  function _transferEthToBeneficiary(address to_, uint256 amount_) private {
+    if (address(this).balance < amount_) {
+      revert NotEnoughETH();
+    }
+    (bool success, ) = payable(to_).call{value: amount_}("");
+    if (!success) {
+      revert ExecTransactionFromModuleFailed();
+    }
+  }
+}
