@@ -43,7 +43,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
     defaultNotifyAhead = _defaultNotifyAhead;
   }
 
-  ///@dev check if there is any notification to send
+  ///@dev check if there is any email to send
   function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
     if (!setting.isPremium(user)) return (false, "");
 
@@ -116,7 +116,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
   function performUpkeep(bytes calldata data) external override {
     if(!setting.isPremium((user))) return;
     (address legacy, NotifyLib.NotifyType notifyType) = abi.decode(data, (address, NotifyLib.NotifyType));
-    //Already notified when contract activated
+    //Already sent when contract activated 
     if (notifyType == NotifyLib.NotifyType.ContractActivated) {
         enableNotify[legacy] = false;
         return; 

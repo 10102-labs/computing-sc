@@ -16,10 +16,12 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
   address public transferLegacyEOA;
   address public transferLegacy;
   address public multisigLegacy;
+  mapping(bytes => uint256) signatureUsed;
 
   event LegacySigned(address indexed user, uint256 legacyId, uint256 timestamp);
 
   error InvalidSignature();
+  error SignatureUsed();
   error TimestampOutOfRange();
   error InvalidV();
   error HexLengthInsufficient();
@@ -27,7 +29,7 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
   error UnauthorizedCaller();
   error AlreadyInit();
 
-  string private constant MESSAGE_PREFIX = "I agree to legacy at address ";
+  string private constant MESSAGE_PREFIX = "By proceeding with creating a new contract, I agree to 10102's Terms of Service";
   uint256 private constant MAX_PAST_OFFSET = 10 minutes;
   uint256 private constant MAX_FUTURE_OFFSET = 5 minutes;
 
@@ -59,8 +61,9 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
     if (timestamp < nowTs - MAX_PAST_OFFSET || timestamp > nowTs + MAX_FUTURE_OFFSET) {
       revert TimestampOutOfRange();
     }
+    if (signatureUsed[signature] != 0) revert SignatureUsed();
 
-    string memory message = generateMessage(legacyAddress, timestamp);
+    string memory message = generateMessage(timestamp);
     bytes32 ethSignedMessageHash = _getEthSignedMessageHash(message);
     address recovered = recoverSigner(ethSignedMessageHash, signature);
     if (recovered != user) {
@@ -68,6 +71,7 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
     }
 
     legacySigned[user].push(Legacy({legacyAddress: legacyAddress, timestamp: timestamp, signature: signature}));
+    signatureUsed[signature] = timestamp;
 
     emit LegacySigned(user, uint256(uint160(legacyAddress)), timestamp);
   }
@@ -85,7 +89,7 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
     uint256 index
   ) external view returns (address legacyAddress, uint256 timestamp, string memory message, bytes memory signature) {
     Legacy memory legacy = legacySigned[user][index];
-    string memory termString = generateMessage(legacy.legacyAddress, legacy.timestamp);
+    string memory termString = generateMessage(timestamp);
     return (legacy.legacyAddress, legacy.timestamp, termString, legacy.signature);
   }
 
@@ -112,25 +116,11 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
     return ecrecover(digest, v, r, s);
   }
 
-  function generateMessage(address legacyAddress, uint256 timestamp) internal pure returns (string memory) {
-    return string.concat(MESSAGE_PREFIX, addressToString(legacyAddress), " at timestamp ", _uintToString(timestamp));
+   function generateMessage(uint256 timestamp) public pure returns (string memory) {
+    return string.concat(MESSAGE_PREFIX, " at timestamp ", _uintToString(timestamp), ".");
   }
 
-  function addressToString(address _addr) public pure returns (string memory) {
-    bytes20 value = bytes20(_addr);
-    bytes memory alphabet = "0123456789abcdef";
 
-    bytes memory str = new bytes(42); // "0x" + 40 hex chars
-    str[0] = "0";
-    str[1] = "x";
-
-    for (uint256 i = 0; i < 20; i++) {
-      str[2 + i * 2] = alphabet[uint8(value[i] >> 4)];
-      str[3 + i * 2] = alphabet[uint8(value[i] & 0x0f)];
-    }
-
-    return string(str);
-  }
 
   function _uintToString(uint256 value) internal pure returns (string memory) {
     if (value == 0) return "0";

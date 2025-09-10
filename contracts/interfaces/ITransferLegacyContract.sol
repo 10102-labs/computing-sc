@@ -46,7 +46,7 @@ interface ITransferLegacy {
     TransferLegacyStruct.Distribution calldata layer3Distribution_
   ) external;
 
-  function activeLegacy(address guardAddress_, address[] calldata assets_, bool isETH_, address bene_) external returns (address[] memory assets, uint8 layer);
+  function activeLegacy(address guardAddress_, address[] calldata assets_, bool isETH_, address bene_) external;
 
   function checkActiveLegacy(address guardAddress_) external view returns (bool);
 
@@ -60,6 +60,7 @@ interface ITransferLegacy {
   
   function getBeneficiaryLayer(address beneficiary) external view returns (uint8);
 
+  function getLayer() external view  returns (uint8)  ;
 
   //function setSwapSettings(TransferLegacyStruct.Swap calldata swap, address _paymentContract) external;
 }

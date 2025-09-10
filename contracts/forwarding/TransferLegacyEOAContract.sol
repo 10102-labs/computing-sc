@@ -4,7 +4,9 @@ pragma solidity 0.8.20;
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {GenericLegacy} from "../common/GenericLegacy.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {TransferLegacyStruct} from "../libraries/TransferLegacyStruct.sol";
 import {IPremiumSetting} from "../interfaces/IPremiumSetting.sol";
 import {ITransferEOALegacy} from "../interfaces/ITransferLegacyEOAContract.sol";
@@ -15,6 +17,7 @@ import {NotifyLib} from "../libraries/NotifyLib.sol";
 
 contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
   using EnumerableSet for EnumerableSet.AddressSet;
+  using SafeERC20 for IERC20;
 
   /* Error */
   error NotBeneficiary();
@@ -38,7 +41,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
 
   /* State variable */
   uint128 public constant LEGACY_TYPE = 3;
-  uint128 public constant MAX_TRANSFER = 100; 
+  uint128 public constant MAX_TRANSFER = 100;
   uint256 public adminFeePercent; // Store fee percentage at initialization
   address public paymentContract; // Store address for fee transfers
   address public uniswapRouter; // Uniswap router address for swapping
@@ -109,7 +112,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
     return (_beneficiariesSet.values(), _layer2Beneficiary, _layer3Beneficiary);
   }
 
-  function getLayer() public view override returns (uint8) {
+  function getLayer() public view override(GenericLegacy, ITransferEOALegacy) returns (uint8) {
     return getCurrentLayer();
   }
 
@@ -442,19 +445,15 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
   }
 
   /**
-   * @param assets erc20 token list
-   * @param isETH_ check is native token
+   * @param assets_ erc20 token list
+   * @param isETH_ is native token
    */
-  function activeLegacy(
-    address[] calldata assets_,
-    bool isETH_,
-    address bene
-  ) external onlyRouter onlyLive returns (address[] memory assets, uint8 layer) {
+  function activeLegacy(address[] calldata assets_, bool isETH_, address bene) external onlyRouter onlyLive {
     if (_checkActiveLegacy()) {
       if (getIsActiveLegacy() == 1) {
         _setLegacyToInactive();
       }
-      (assets, layer) = _transferAssetToBeneficiaries(assets_, isETH_, bene);
+      _transferAssetToBeneficiaries(assets_, isETH_, bene);
     } else {
       revert NotEnoughContitionalActive();
     }
@@ -526,115 +525,106 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    * @param owner_ owner legacy
    * @param distribution_ distribution
    */
-  function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private pure {
+  function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private view {
     if (distribution_.percent == 0 || distribution_.percent > 100) revert DistributionAssetInvalid();
-    if (distribution_.user == address(0) || distribution_.user == owner_) revert DistributionAssetInvalid();
+    if (distribution_.user == address(0) || distribution_.user == owner_ || _isContract(distribution_.user)) revert DistributionAssetInvalid();
   }
 
   /**
    * @dev transfer asset to beneficiaries
    */
-  function _transferAssetToBeneficiaries(
-    address[] calldata assets_,
-    bool isETH_,
-    address bene_
-  ) private returns (address[] memory assets, uint8 currentLayer) {
+  function _transferAssetToBeneficiaries(address[] calldata assets_, bool isETH_, address bene_) private {
     address ownerAddress = getLegacyOwner();
     address[] memory beneficiaries = getBeneficiaries(bene_);
-    currentLayer = getCurrentLayer();
     uint8 beneLayer = getBeneficiaryLayer(bene_);
     uint256 n = assets_.length;
     uint256 maxTransfer = MAX_TRANSFER;
 
     if (isETH_) {
       maxTransfer = maxTransfer - beneficiaries.length;
-    } 
+    }
     //actual number of assets claimed in this tranasaction
-    bool isRemaining  = false;
+    bool isRemaining = false;
     if (n * beneficiaries.length > maxTransfer) {
       n = maxTransfer / beneficiaries.length;
       isRemaining = true;
     }
 
     //prepare data to send mail
-    NotifyLib.BeneReceived[] memory receipt = new  NotifyLib.BeneReceived[](beneficiaries.length);
+    NotifyLib.BeneReceived[] memory receipt = new NotifyLib.BeneReceived[](beneficiaries.length);
     NotifyLib.ListAsset[] memory summary = new NotifyLib.ListAsset[](n + 1);
-    for(uint256 i = 0; i < beneficiaries.length; i++) {
+    for (uint256 i = 0; i < beneficiaries.length; i++) {
       receipt[i].beneAddress = beneficiaries[i];
       receipt[i].name = getBeneNickname(beneficiaries[i]);
-      string[] memory listAssetName = new string[](n+1); // +1 for ETH 
-      uint256[] memory listAmount = new uint256[](n+1);
+      string[] memory listAssetName = new string[](n + 1); // +1 for ETH
+      uint256[] memory listAmount = new uint256[](n + 1);
       receipt[i].listAssetName = listAssetName;
       receipt[i].listAmount = listAmount;
-
     }
-
     if (isETH_) {
       uint256 totalAmountEth = address(this).balance;
-      uint256 fee = (totalAmountEth * adminFeePercent) / 10000;
-      uint256 distributableEth = totalAmountEth - fee;
-      if (fee > 0) {
-        _transferEthToBeneficiary(paymentContract, fee);
-      }
-      
       summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: "ETH"});
-      for (uint256 i = 0; i < beneficiaries.length; ) {
-        uint256 amount = (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100;
-        if (amount > 0) {
+      if (totalAmountEth > 0) {
+        uint256 fee = (totalAmountEth * adminFeePercent) / 10000;
+        uint256 distributableEth = totalAmountEth - fee;
+        if (fee > 0) {
+          _transferEthToBeneficiary(paymentContract, fee);
+        }
+        for (uint256 i = 0; i < beneficiaries.length ; ) {
+          uint256 amount = i != beneficiaries.length - 1
+            ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100
+            : address(this).balance;
           _transferEthToBeneficiary(beneficiaries[i], amount);
           receipt[i].listAssetName[n] = "ETH";
           receipt[i].listAmount[n] = amount;
-        }
-        unchecked {
-          i++;
+          unchecked {
+            i++;
+          }
         }
       }
-      assets = new address[](1);
-      assets[0] = address(0);
     }
 
-    assets = new address[](n);
     for (uint256 i = 0; i < n; ) {
       address token = assets_[i];
       uint256 allowanceAmountErc20 = IERC20(token).allowance(ownerAddress, address(this));
       uint256 balanceAmountErc20 = IERC20(token).balanceOf(ownerAddress);
       uint256 totalAmount = balanceAmountErc20 > allowanceAmountErc20 ? allowanceAmountErc20 : balanceAmountErc20;
+      uint256 transferredAmountERC20 = 0;
+      if (totalAmount > 0) {
+        string memory symbol = IERC20Metadata(token).symbol();
+        summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmount, listAssetName: symbol});
 
-      string memory symbol = IERC20(token).symbol();
-      summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmount, listAssetName: symbol});
+        uint256 fee = (totalAmount * adminFeePercent) / 10000;
+        uint256 distributable = totalAmount - fee;
 
-      uint256 fee = (totalAmount * adminFeePercent) / 10000;
-      uint256 distributable = totalAmount - fee;
-
-      if (fee > 0) {
-        bool feePullSuccess = IERC20(token).transferFrom(ownerAddress, address(this), fee);
-        if (!feePullSuccess) revert SafeTransfromFailed(token, ownerAddress, address(this));
-        _swapAdminFee(token, fee);
-      }
-      for (uint256 j = 0; j < beneficiaries.length; ) {
-        uint256 amount = (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100;
-        if (amount > 0) {
+        if (fee > 0) {
+          bool feePullSuccess = IERC20(token).transferFrom(ownerAddress, address(this), fee);
+          if (!feePullSuccess) revert SafeTransfromFailed(token, ownerAddress, address(this));
+          _swapAdminFee(token, fee);
+        }
+        for (uint256 j = 0; j < beneficiaries.length; ) {
+          uint256 amount = j != beneficiaries.length - 1
+            ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100
+            : totalAmount - transferredAmountERC20;
+          transferredAmountERC20 += amount;
           _transferErc20ToBeneficiary(token, ownerAddress, beneficiaries[j], amount);
           receipt[j].listAssetName[i] = symbol;
           receipt[j].listAmount[i] = amount;
-        }
-        unchecked {
-          j++;
+          unchecked {
+            j++;
+          }
         }
       }
-      assets[i] = token;
       unchecked {
         i++;
       }
     }
-    // send notification & email
+    // send email
     IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(
       summary,
       receipt,
       isRemaining
     );
-
-    return (assets, currentLayer);
   }
 
   /**
@@ -644,8 +634,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    * @param to_ beneficiary address
    */
   function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount_) private {
-    bool success = IERC20(erc20Address_).transferFrom(from_, to_, amount_);
-    if (!success) revert SafeTransfromFailed(erc20Address_, from_, to_);
+    IERC20(erc20Address_).safeTransferFrom(from_, to_, amount_);
   }
 
   /**
@@ -653,12 +642,18 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    * @param to_ beneficiary address
    */
   function _transferEthToBeneficiary(address to_, uint256 amount_) private {
-    if (address(this).balance < amount_) {
-      revert NotEnoughETH();
+    payable(to_).transfer(amount_);
+  }
+
+  /**
+   * @dev check whether addr is a smart contract address or eoa address
+   * @param addr  the address need to check
+   */
+  function _isContract(address addr) private view returns (bool) {
+    uint256 size;
+    assembly ("memory-safe") {
+      size := extcodesize(addr)
     }
-    (bool success, ) = payable(to_).call{value: amount_}("");
-    if (!success) {
-      revert ExecTransactionFromModuleFailed();
-    }
+    return size > 0;
   }
 }

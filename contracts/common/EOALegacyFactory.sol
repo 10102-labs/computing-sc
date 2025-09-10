@@ -3,6 +3,8 @@
 pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/utils/Create2.sol";
+import {ILegacyDeployer} from "../interfaces/ILegacyDeployer.sol";
+
 
 contract EOALegacyFactory {
   /* Error */
@@ -10,9 +12,9 @@ contract EOALegacyFactory {
 
   /* State variable */
   uint256 public _legacyId;
+  address public legacyDeployerContract;
   mapping(uint256 => address) public legacyAddresses;
   mapping(address => bool) public isCreateLegacy;
-  mapping(address => uint256) public nonceByUsers;
 
   /* Internal function */
   /**
@@ -21,10 +23,7 @@ contract EOALegacyFactory {
    * @param sender_  sender
    */
   function _getNextAddress(bytes memory bytecode_, address sender_) internal view returns (address) {
-    uint256 nextNonce = nonceByUsers[sender_] + 1;
-    bytes32 salt = keccak256(abi.encodePacked(sender_, nextNonce));
-    bytes32 bytecodeHash = keccak256(bytecode_);
-    return Create2.computeAddress(salt, bytecodeHash);
+       return  ILegacyDeployer(legacyDeployerContract).getNextAddress(bytecode_ ,sender_);
   }
 
   /**
@@ -38,9 +37,7 @@ contract EOALegacyFactory {
    */
   function _createLegacy(bytes memory legacyBytecode_, address sender_) internal returns (uint256, address) {
     _legacyId += 1;
-    nonceByUsers[sender_] += 1;
-    bytes32 salt = keccak256(abi.encodePacked(sender_, nonceByUsers[sender_]));
-    address legacyAddress = Create2.deploy(0, salt, legacyBytecode_);
+    (address legacyAddress,) = ILegacyDeployer(legacyDeployerContract).createLegacy(legacyBytecode_,sender_);
     legacyAddresses[_legacyId] = legacyAddress;
     isCreateLegacy[sender_] = true;
 

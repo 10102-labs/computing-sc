@@ -3,21 +3,27 @@
 pragma solidity 0.8.20;
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Enum} from "@safe-global/safe-smart-account/contracts/common/Enum.sol";
+
 import {GenericLegacy} from "../common/GenericLegacy.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
+
 import {ISafeGuard} from "../interfaces/ISafeGuard.sol";
 import {ISafeWallet} from "../interfaces/ISafeWallet.sol";
 import {TransferLegacyStruct} from "../libraries/TransferLegacyStruct.sol";
-import {Enum} from "../libraries/Enum.sol";
+
 import {IPremiumSetting} from "../interfaces/IPremiumSetting.sol";
 import {ITransferLegacy} from "../interfaces/ITransferLegacyContract.sol";
 import {IPayment} from "../interfaces/IPayment.sol";
 import {IUniswapV2Router02} from "../interfaces/IUniswapV2Router02.sol";
 import {NotifyLib} from "../libraries/NotifyLib.sol";
 
-contract TransferLegacy is GenericLegacy, ITransferLegacy{
+contract TransferLegacy is GenericLegacy, ITransferLegacy {
   using EnumerableSet for EnumerableSet.AddressSet;
-
+  using SafeERC20 for IERC20;
   /* Error */
   error NotBeneficiary();
   error DistributionUserInvalid();
@@ -78,7 +84,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
     return (_beneficiariesSet.values(), _layer2Beneficiary, _layer3Beneficiary);
   }
 
-  function getLayer() public view override returns (uint8) {
+  function getLayer() public view override(GenericLegacy, ITransferLegacy) returns (uint8) {
     return getCurrentLayer(safeGuard);
   }
 
@@ -218,7 +224,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
     safeGuard = _safeGuard;
     paymentContract = _paymentContract;
     adminFeePercent = IPayment(_paymentContract).getFee(); //always <= 10000
-    
+
     // Check duplicates across layers BEFORE setting anything
     address l2User = layer2Distribution_.user;
     address l3User = layer3Distribution_.user;
@@ -408,17 +414,12 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
   /**
    * @param guardAddress_  guard address
    */
-  function activeLegacy(
-    address guardAddress_,
-    address[] calldata assets_,
-    bool isETH_,
-    address bene_
-  ) external onlyRouter returns (address[] memory assets, uint8 layer) {
+  function activeLegacy(address guardAddress_, address[] calldata assets_, bool isETH_, address bene_) external onlyRouter {
     if (_checkActiveLegacy(guardAddress_)) {
       if (getIsActiveLegacy() == 1) {
         _setLegacyToInactive();
       }
-      (assets, layer) = _transferAssetToBeneficiaries(guardAddress_, assets_, isETH_, bene_);
+      _transferAssetToBeneficiaries(assets_, isETH_, bene_);
     } else {
       revert NotEnoughContitionalActive();
     }
@@ -490,23 +491,17 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
    * @param owner_ safe wallet address
    * @param distribution_ distribution
    */
-  function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private pure {
+  function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private view {
     if (distribution_.percent == 0 || distribution_.percent > 100) revert DistributionAssetInvalid();
-    if (distribution_.user == address(0) || distribution_.user == owner_) revert DistributionAssetInvalid();
+    if (distribution_.user == address(0) || distribution_.user == owner_ || _isContract(distribution_.user)) revert DistributionUserInvalid();
   }
 
   /**
    * @dev transfer asset to beneficiaries
    */
-  function _transferAssetToBeneficiaries(
-    address guardAddress_,
-    address[] calldata assets_,
-    bool isETH_,
-    address bene_
-  ) private returns (address[] memory assets, uint8 currentLayer) {
+  function _transferAssetToBeneficiaries(address[] calldata assets_, bool isETH_, address bene_) private {
     address safeAddress = getLegacyOwner();
     address[] memory beneficiaries = getBeneficiaries(bene_);
-    currentLayer = getCurrentLayer(guardAddress_);
     uint8 beneLayer = getBeneficiaryLayer(bene_);
     uint256 n = assets_.length;
     uint256 maxTransfer = MAX_TRANSFER;
@@ -540,64 +535,61 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
     // Handle ETH transfer if isETH_ is true
     if (isETH_) {
       uint256 totalAmountEth = address(safeAddress).balance;
-      uint256 fee = (totalAmountEth * adminFeePercent) / 10000;
-      uint256 distributableEth = totalAmountEth - fee;
+      if (totalAmountEth > 0) {
+        uint256 fee = (totalAmountEth * adminFeePercent) / 10000;
+        uint256 distributableEth = totalAmountEth - fee;
+        if (fee > 0) _transferEthToBeneficiary(safeAddress, paymentContract, fee);
 
-      if (fee > 0) {
-        _transferEthToBeneficiary(safeAddress, paymentContract, fee);
-      }
-      symbol = "ETH";
-      summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: symbol});
-      for (uint256 i = 0; i < beneficiaries.length; ) {
-        uint256 amount = (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100;
-        if (amount > 0) {
+        symbol = "ETH";
+        summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: symbol});
+        for (uint256 i = 0; i < beneficiaries.length; ) {
+          uint256 amount = i != beneficiaries.length - 1
+            ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100
+            : address(safeAddress).balance;
           _transferEthToBeneficiary(safeAddress, beneficiaries[i], amount);
           receipt[i].listAssetName[n] = symbol;
           receipt[i].listAmount[n] = amount;
-        }
-        unchecked {
-          i++;
+          unchecked {
+            i++;
+          }
         }
       }
-      assets = new address[](1);
-      assets[0] = address(0);
-      // Do not return here; continue to process ERC20 tokens
     }
-
-    // Handle ERC20 transfers
-
-    assets = new address[](n);
 
     for (uint256 i = 0; i < n; ) {
       address token = assets_[i];
       uint256 totalAmountErc20 = IERC20(token).balanceOf(safeAddress);
-      uint256 fee = (totalAmountErc20 * adminFeePercent) / 10000;
-      uint256 distributable = totalAmountErc20 - fee;
+      if (totalAmountErc20 > 0) {
+        uint256 fee = (totalAmountErc20 * adminFeePercent) / 10000;
+        uint256 distributable = totalAmountErc20 - fee;
 
-      symbol = IERC20(token).symbol();
-      summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmountErc20, listAssetName: symbol});
+        symbol = IERC20Metadata(token).symbol();
+        summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmountErc20, listAssetName: symbol});
+        if (fee > 0) {
+          _transferErc20ToBeneficiary(token, safeAddress, address(this), fee);
+          _swapAdminFee(token, fee);
+        }
 
-      if (fee > 0) {
-        _transferErc20ToBeneficiary(token, safeAddress, address(this), fee);
-        _swapAdminFee(token, fee);
-      }
-      for (uint256 j = 0; j < beneficiaries.length; ) {
-        uint256 amount = (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100;
-        if (amount > 0) {
-          _transferErc20ToBeneficiary(token, safeAddress, beneficiaries[j], amount);
-          receipt[j].listAssetName[i] = symbol;
-          receipt[j].listAmount[i] = amount;
+        for (uint256 j = 0; j < beneficiaries.length; ) {
+          uint256 amount = j != beneficiaries.length - 1
+            ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100
+            : IERC20(assets_[i]).balanceOf(safeAddress);
+          if (amount > 0) {
+            _transferErc20ToBeneficiary(token, safeAddress, beneficiaries[j], amount);
+            receipt[j].listAssetName[i] = symbol;
+            receipt[j].listAmount[i] = amount;
+          }
+          unchecked {
+            j++;
+          }
         }
-        unchecked {
-          j++;
-        }
       }
-      assets[i] = token;
+
       unchecked {
         i++;
       }
     }
-    // send notification & email
+    // send email
     IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(summary, receipt, remaining);
   }
   /**
@@ -608,8 +600,14 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
    */
   function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount) private {
     bytes memory transferErc20Data = abi.encodeWithSignature("transfer(address,uint256)", to_, amount);
-    bool transferErc20Success = ISafeWallet(from_).execTransactionFromModule(erc20Address_, 0, transferErc20Data, Enum.Operation.Call);
-    if (!transferErc20Success) revert ExecTransactionFromModuleFailed();
+    (bool transferErc20Success, bytes memory returnData) = ISafeWallet(from_).execTransactionFromModuleReturnData(
+      erc20Address_,
+      0,
+      transferErc20Data,
+      Enum.Operation.Call
+    );
+
+    if (!transferErc20Success || (returnData.length != 0 && !abi.decode(returnData, (bool)))) revert ExecTransactionFromModuleFailed();
   }
 
   /**
@@ -620,5 +618,18 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy{
   function _transferEthToBeneficiary(address from_, address to_, uint256 amount) private {
     bool transferEthSuccess = ISafeWallet(from_).execTransactionFromModule(to_, amount, "", Enum.Operation.Call);
     if (!transferEthSuccess) revert ExecTransactionFromModuleFailed();
+  }
+
+  /**
+   * @dev check whether addr is a smart contract address or eoa address
+   * @param addr  the address need to check
+   *
+   */
+  function _isContract(address addr) private view returns (bool) {
+    uint256 size;
+    assembly ("memory-safe") {
+      size := extcodesize(addr)
+    }
+    return size > 0;
   }
 }

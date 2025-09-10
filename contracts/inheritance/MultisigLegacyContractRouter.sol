@@ -70,8 +70,9 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     _;
   }
 
-  function initialize(address _premiumSetting, address _verifier) public initializer {
+  function initialize(address _deployerContract, address _premiumSetting, address _verifier) public initializer {
     __ReentrancyGuard_init();
+    legacyDeployerContract = _deployerContract;
     premiumSetting = _premiumSetting;
     verifier = EIP712LegacyVerifier(_verifier);
   }
@@ -131,7 +132,6 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     // Create new legacy and guard
     (uint256 newLegacyId, address legacyAddress, address guardAddress) = _createLegacy(
       type(MultisigLegacy).creationCode,
-      type(SafeGuard).creationCode,
       msg.sender
     );
 
@@ -151,7 +151,7 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     IMultisigLegacy(legacyAddress).setLegacyName(mainConfig_.name);
 
     //Initialize safeguard
-    ISafeGuard(guardAddress).initialize();
+    ISafeGuard(guardAddress).initialize(safeWallet);
 
     //Check min require signatures
     if (extraConfig_.minRequiredSignatures == 0 || extraConfig_.minRequiredSignatures > numberOfBeneficiaries) revert MinRequiredSignaturesInvalid();

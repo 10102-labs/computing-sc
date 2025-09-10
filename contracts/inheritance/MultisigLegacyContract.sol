@@ -4,11 +4,11 @@ pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {GenericLegacy} from "../common/GenericLegacy.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
 import {ISafeGuard} from "../interfaces/ISafeGuard.sol";
 import {ISafeWallet} from "../interfaces/ISafeWallet.sol";
 import {MultisigLegacyStruct} from "../libraries/MultisigLegacyStruct.sol";
-import {Enum} from "../libraries/Enum.sol";
+import {Enum} from "@safe-global/safe-smart-account/contracts/common/Enum.sol";
+
 
 contract MultisigLegacy is GenericLegacy {
   error BeneficiaryInvalid();
@@ -152,10 +152,10 @@ contract MultisigLegacy is GenericLegacy {
   function activeLegacy(address guardAddress_) external onlyRouter isActiveLegacy returns (address[] memory newSigners, uint256 newThreshold) {
     //Active legacy
     if (_checkActiveLegacy(guardAddress_)) {
-      address[] memory benficiariesList = _beneficiariesSet.values();
+      address[] memory beneficiariesList = _beneficiariesSet.values();
       _setLegacyToInactive();
       _clearBeneficiaries();
-      (newSigners, newThreshold) = _addOwnerWithThreshold(benficiariesList);
+      (newSigners, newThreshold) = _addOwnerWithThreshold(beneficiariesList);
     } else {
       revert NotEnoughContitionalActive();
     }
@@ -223,11 +223,11 @@ contract MultisigLegacy is GenericLegacy {
    * @dev Add beneficiaries and set threshold in safe wallet
    * @param newSigners, newThreshold
    */
-  function _addOwnerWithThreshold(address[] memory beneficiries_) private returns (address[] memory newSigners, uint256 newThreshold) {
+  function _addOwnerWithThreshold(address[] memory beneficiaries_) private returns (address[] memory newSigners, uint256 newThreshold) {
     address owner = getLegacyOwner();
     uint256 threshold = ISafeWallet(owner).getThreshold();
-    for (uint256 i = 0; i < beneficiries_.length; ) {
-      bytes memory addOwnerData = abi.encodeWithSignature("addOwnerWithThreshold(address,uint256)", beneficiries_[i], threshold);
+    for (uint256 i = 0; i < beneficiaries_.length; ) {
+      bytes memory addOwnerData = abi.encodeWithSignature("addOwnerWithThreshold(address,uint256)", beneficiaries_[i], threshold);
       unchecked {
         ++i;
       }
@@ -249,8 +249,8 @@ contract MultisigLegacy is GenericLegacy {
    * @param owner_  safe wallet address
    * @param beneficiary_ beneficiary address
    */
-  function _checkBeneficiaries(address[] memory signers_, address owner_, address beneficiary_) private pure {
-    if (beneficiary_ == address(0) || beneficiary_ == owner_) revert BeneficiaryInvalid();
+  function _checkBeneficiaries(address[] memory signers_, address owner_, address beneficiary_) private view {
+    if (beneficiary_ == address(0) || beneficiary_ == owner_ || _isContract(beneficiary_)) revert BeneficiaryInvalid();
 
     for (uint256 j = 0; j < signers_.length; ) {
       if (beneficiary_ == signers_[j]) revert BeneficiaryInvalid();
@@ -259,4 +259,16 @@ contract MultisigLegacy is GenericLegacy {
       }
     }
   }
-}
+
+  /**
+   * @dev check whether addr is a smart contract address or eoa address
+   * @param addr  the address need to check
+   */
+  function _isContract(address addr) private view returns (bool) {
+    uint256 size;
+    assembly ("memory-safe") {
+      size := extcodesize(addr)
+    }
+    return size > 0;
+  }
+  }

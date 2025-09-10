@@ -11,9 +11,9 @@ import { expect, use } from "chai";
 import { formatEther, parseEther } from "ethers/lib/utils";
 import { seconds } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time/duration";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-
+import { genMessage } from "../scripts/utils/genMsg";
 const web3 = new Web3(process.env.RPC!);
-const user_pk = process.env.PK;
+const user_pk = process.env.DEPLOYER_PRIVATE_KEY;
 
 const user = web3.eth.accounts.privateKeyToAccount(user_pk!).address;
 const wallet = web3.eth.accounts.privateKeyToAccount(user_pk!);
@@ -23,14 +23,6 @@ const wallet = web3.eth.accounts.privateKeyToAccount(user_pk!);
 const router = "0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008";
 const weth = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9";
 
-async function genMessage(
-
-    legacyAddress: string,
-    timestamp: number): Promise<string> {
-
-    const message = `I agree to legacy at address ${legacyAddress.toLowerCase()} at timestamp ${timestamp}`;
-    return message;
-}
 
 //Ensure legacy contract is compatible and friendly with Premium
 describe("Legacy contract", async function () {
@@ -70,35 +62,44 @@ describe("Legacy contract", async function () {
 
         const PremiumRegistry = await ethers.getContractFactory("PremiumRegistry");
         const premiumRegistry = await PremiumRegistry.deploy();
-        await premiumRegistry.connect(dev).initialize(usdt.address, usdc.address,       
+        await premiumRegistry.connect(dev).initialize(usdt.address, usdc.address,
             "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
             "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
             "0x694AA1769357215DE4FAC081bf1f309aDC325306",
-             premiumSetting.address,
-             payment.address
-            );
+            premiumSetting.address,
+            payment.address
+        );
 
-        
+
         const VerifierTerm = await ethers.getContractFactory("EIP712LegacyVerifier");
         const verifierTerm = await VerifierTerm.deploy();
         await verifierTerm.initialize(dev.address);
 
+        // deployer contract 
+        const LegacyDeployer = await ethers.getContractFactory("LegacyDeployer");
+        const legacyDeployer = await LegacyDeployer.deploy();
+        await legacyDeployer.initialize();
+
+
         const TransferEOALegacyRouter = await ethers.getContractFactory("TransferEOALegacyRouter");
         const transferEOALegacyRouter = await TransferEOALegacyRouter.deploy();
-        await transferEOALegacyRouter.initialize(premiumSetting.address, verifierTerm.address, payment.address); // fork setting contract 
+        await transferEOALegacyRouter.initialize(legacyDeployer.address, premiumSetting.address, verifierTerm.address, payment.address, router, weth); // fork setting contract 
+
+
 
 
         const TransferLegacyRouter = await ethers.getContractFactory("TransferLegacyRouter");
         const transferLegacyRouter = await TransferLegacyRouter.deploy();
-        await transferLegacyRouter.initialize(premiumSetting.address, verifierTerm.address,  payment.address);
+        await transferLegacyRouter.initialize(legacyDeployer.address, premiumSetting.address, verifierTerm.address, payment.address, router, weth);
 
 
         const MultisignLegacyRouter = await ethers.getContractFactory("MultisigLegacyRouter");
         const multisignLegacyRouter = await MultisignLegacyRouter.deploy();
-        await multisignLegacyRouter.initialize(premiumSetting.address, verifierTerm.address);
+        await multisignLegacyRouter.initialize(legacyDeployer.address, premiumSetting.address, verifierTerm.address);
         await premiumSetting.connect(dev).setParams(premiumRegistry.address, transferEOALegacyRouter.address, transferLegacyRouter.address, multisignLegacyRouter.address);
 
 
+        await legacyDeployer.setParams(multisignLegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
 
         await verifierTerm.connect(dev).setRouterAddresses(transferEOALegacyRouter.address, transferLegacyRouter.address, multisignLegacyRouter.address);
 
@@ -106,8 +107,8 @@ describe("Legacy contract", async function () {
         await premiumRegistry.connect(dev).createPlans([ethers.constants.MaxUint256], [1], [""], [""], [""]);
         const planId = (await premiumRegistry.getNextPlanId());
 
-        await premiumRegistry.connect(dev).subrcribeByAdmin(user1.address, Number(planId)-1, "USDC");
-        await premiumRegistry.connect(dev).subrcribeByAdmin(dev.address, Number(planId)-1, "USDC");
+        await premiumRegistry.connect(dev).subrcribeByAdmin(user1.address, Number(planId) - 1, "USDC");
+        await premiumRegistry.connect(dev).subrcribeByAdmin(dev.address, Number(planId) - 1, "USDC");
 
         return {
             genericLegacy,
@@ -136,7 +137,7 @@ describe("Legacy contract", async function () {
 
     })
 
-    it.only("should create transfer EOA legacy", async function () {
+    it("should create transfer EOA legacy", async function () {
         const {
             genericLegacy,
             treasury,
@@ -185,9 +186,10 @@ describe("Legacy contract", async function () {
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(user1.address);
         console.log(legacyAddress);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
-        const signature = await user1.signMessage(message);
-
+        const msg = await genMessage(currentTimestamp);
+        const signature = await user1.signMessage(msg);
+        console.log(msg);
+        console.log(await verifierTerm.generateMessage(currentTimestamp));
 
         await transferEOALegacyRouter.connect(user1).createLegacy(
             mainConfig,
@@ -200,26 +202,26 @@ describe("Legacy contract", async function () {
             signature
         );
 
-        
+
         const legacy = await ethers.getContractAt("TransferEOALegacy", legacyAddress);
         console.log(await legacy.isLive());
         console.log(await legacy.getTriggerActivationTimestamp());
         console.log(await legacy.getLegacyBeneficiaries());
         expect(await legacy.getLayer()).to.be.eql(1)
         await increase(86400 * 2 + 1);
-        expect(await legacy.getLayer()).to.be.eql(2) 
+        expect(await legacy.getLayer()).to.be.eql(2)
         await increase(86400);
-        expect(await legacy.getLayer()).to.be.eql(3) 
+        expect(await legacy.getLayer()).to.be.eql(3)
 
         // expect(await premiumSetting.connect(dev).getLegacyCode(legacyAddress)).to.be.gte(1000000); // a 7 digit number
 
         expect(await legacy.getLegacyName()).to.be.eql(mainConfig.name);
         console.log(await legacy.getBeneNickname("0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae"))
-        console.log("Last timestamp" , await legacy.getLastTimestamp())
+        console.log("Last timestamp", await legacy.getLastTimestamp())
 
         //update bene  name via setLegacyConfig
         console.log("update bene name via setLegacyConfig")
-        let newConfig =  {
+        let newConfig = {
             name: "abc",
             note: "nothing",
             nickNames: ["dat"],
@@ -244,7 +246,7 @@ describe("Legacy contract", async function () {
         const newNickname2 = "newNickname2";
         const newNickname3 = "newNickname3";
         await transferEOALegacyRouter.connect(user1).setLegacyConfig(1, newConfig, extraConfig, newlayer2Distribution, newlayer3Distribution, newNickname2, newNickname3)
-        
+
         //bene 
         expect(await legacy.getBeneNickname("0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae")).to.be.eql(newConfig.nickNames[0])
         expect(await legacy.getBeneNickname("0xc3a20F9D15cfD2224038EcCC8186C216366c4BFd")).to.be.eql(newNickname2)
@@ -271,7 +273,8 @@ describe("Legacy contract", async function () {
         expect(await legacy.getBeneNickname("0x9189CD497326A4D94236a028094247A561D895c9")).to.be.eql(nickNames[1])
     })
 
-    it.only("should beneficiaries activate legacy and claim assets", async function () {
+
+    it("should revert used sig ", async function () {
         const {
             genericLegacy,
             treasury,
@@ -282,8 +285,7 @@ describe("Legacy contract", async function () {
             dev,
             verifierTerm,
             premiumRegistry,
-            usdc,
-            usdt
+            premiumSetting
         } = await loadFixture(deployFixture);
 
 
@@ -293,7 +295,7 @@ describe("Legacy contract", async function () {
             nickNames: ["dadad"],
             distributions: [
                 {
-                    user: user2.address,
+                    user: "0xf19a87252C1d98EF7867E137fCA8ee24Aa3f47Ae",
                     percent: 100
                 }
             ]
@@ -321,8 +323,98 @@ describe("Legacy contract", async function () {
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(user1.address);
         console.log(legacyAddress);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
-        const signature = await user1.signMessage(message);
+        const msg = await genMessage(currentTimestamp);
+        const signature = await user1.signMessage(msg);
+
+    
+        await transferEOALegacyRouter.connect(user1).createLegacy(
+            mainConfig,
+            extraConfig,
+            layer2Distribution,
+            layer3Distribution,
+            nickName2,
+            nickName3,
+            currentTimestamp,
+            signature
+        );
+
+
+        
+            try {
+                await (transferEOALegacyRouter.connect(user2).createLegacy(
+                mainConfig,
+                extraConfig,
+                layer2Distribution,
+                layer3Distribution,
+                nickName2,
+                nickName3,
+                currentTimestamp,
+                signature
+            ))}
+            catch(e) {
+               expect(e?.toString()).to.contains("SignatureUsed()");
+            }
+
+       
+    })
+
+    it.only("should beneficiaries activate legacy and claim assets", async function () {
+        const {
+            genericLegacy,
+            treasury,
+            user1,
+            user2,
+            user3,
+            transferEOALegacyRouter,
+            dev,
+            verifierTerm,
+            premiumRegistry,
+            usdc,
+            usdt
+        } = await loadFixture(deployFixture);
+
+
+        const mainConfig = {
+            name: "abc",
+            note: "nothing",
+            nickNames: ["dadad"],
+            distributions: [
+                {
+                    user: user2.address,
+                    percent: 50
+                },
+                {
+                    user: user3.address,
+                    percent: 50
+                }
+            ]
+        };
+
+        const extraConfig = {
+            lackOfOutgoingTxRange: 86400,
+            delayLayer2: 86400,
+            delayLayer3: 86400
+        };
+
+        const layer2Distribution = {
+            user: "0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b",
+            percent: 100
+        };
+
+        const layer3Distribution = {
+            user: "0xa0e95ACC5ec544f040b89261887C0BBa113981AD",
+            percent: 100
+        };
+
+        const nickName2 = "daddd";
+        const nickName3 = "dat";
+
+        const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(user1.address);
+        console.log(legacyAddress);
+        const currentTimestamp = (await currentTime());
+        const msg = await genMessage(currentTimestamp);
+        const signature = await user1.signMessage(msg);
+     
 
 
         await transferEOALegacyRouter.connect(user1).createLegacy(
@@ -411,8 +503,8 @@ describe("Legacy contract", async function () {
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(user1.address);
         console.log(legacyAddress);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
-        const signature = await user1.signMessage(message);
+        const msg = await genMessage(currentTimestamp);
+        const signature = await user1.signMessage(msg);
 
 
         await transferEOALegacyRouter.connect(user1).createLegacy(
@@ -491,7 +583,7 @@ describe("Legacy contract", async function () {
         const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
         const legacyAddress = await transferLegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = wallet.sign(message).signature;
 
         await transferLegacyRouter.connect(dev).createLegacy(
@@ -525,7 +617,7 @@ describe("Legacy contract", async function () {
         // expect(await premiumSetting.connect(dev).getLegacyCode(legacyAddress)).to.be.gte(1000000); // a 7 digit number
         expect(await legacy.getLegacyName()).to.be.eql(mainConfig.name);
 
-        console.log("Last timestamp" , await legacy.getLastTimestamp())
+        console.log("Last timestamp", await legacy.getLastTimestamp())
 
 
 
@@ -580,7 +672,7 @@ describe("Legacy contract", async function () {
         const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
         const legacyAddress = await transferLegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = wallet.sign(message).signature;
 
         await transferLegacyRouter.connect(dev).createLegacy(
@@ -659,9 +751,9 @@ describe("Legacy contract", async function () {
         const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
         const legacyAddress = await transferLegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = wallet.sign(message).signature;
-
+        
         await transferLegacyRouter.connect(dev).createLegacy(
             safeWallet,
             mainConfig,
@@ -702,7 +794,7 @@ describe("Legacy contract", async function () {
             name: "abc",
             note: "nothing",
             nickNames: ["dadad", "dadad"],
-            beneficiaries: ["0x9Ce08071d0ffF472dD1B0e3542A4B61Ac57a072b", "0xa0e95ACC5ec544f040b89261887C0BBa113981AD"]
+            beneficiaries: [user1.address, user2.address]
         };
 
         const extraConfig = {
@@ -715,7 +807,7 @@ describe("Legacy contract", async function () {
         const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
         const legacyAddress = await multisignLegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = wallet.sign(message).signature;
 
         await multisignLegacyRouter.connect(dev).createLegacy(
@@ -733,8 +825,8 @@ describe("Legacy contract", async function () {
         console.log(await legacy.getLegacyBeneficiaries());
 
         // expect(await premiumSetting.connect(dev).getLegacyCode(legacyAddress)).to.be.gte(1000000); // a 7 digit number
-        expect (await legacy.getLegacyName()).to.be.eql(mainConfig.name)
-        console.log("Last timestamp" , await legacy.getLastTimestamp())
+        expect(await legacy.getLegacyName()).to.be.eql(mainConfig.name)
+        console.log("Last timestamp", await legacy.getLastTimestamp())
 
 
         console.log(await premiumSetting.getBatchLegacyTriggerTimestamp([legacyAddress, legacyAddress]));
