@@ -4,6 +4,7 @@ pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/utils/Create2.sol";
 import {ISafeWallet} from "../interfaces/ISafeWallet.sol";
+import {ILegacyDeployer} from "../interfaces/ILegacyDeployer.sol";
 contract LegacyFactory {
 
   bytes32 internal constant GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
@@ -16,9 +17,9 @@ contract LegacyFactory {
 
   /* State variable */
   uint256 internal _legacyId;
+  address public legacyDeployerContract;
   mapping(uint256 => address) public legacyAddresses;
   mapping(uint256 => address) public guardAddresses;
-  mapping(address => uint256) internal nonceByUsers;
   mapping(address => bool) internal isCreateLegacy;
 
   /* Internal function */
@@ -28,27 +29,21 @@ contract LegacyFactory {
    * @param sender_  sender
    */
   function _getNextAddress(bytes memory bytecode_, address sender_) internal view returns (address) {
-    uint256 nextNonce = nonceByUsers[sender_] + 1;
-    bytes32 salt = keccak256(abi.encodePacked(sender_, nextNonce));
-    bytes32 bytecodeHash = keccak256(bytecode_);
-    return Create2.computeAddress(salt, bytecodeHash);
+   return  ILegacyDeployer(legacyDeployerContract).getNextAddress(bytecode_ ,sender_);
   }
+
 
   /**
    * @dev create legacy and guard
    * @param legacyBytecode_  legacy byte code
-   * @param guardByteCode_ guard byte code
    * @param sender_ sender
    * @return legacyId
    * @return legacyAddress
    * @return guardAddress
    */
-  function _createLegacy(bytes memory legacyBytecode_, bytes memory guardByteCode_, address sender_) internal returns (uint256, address, address) {
+  function _createLegacy(bytes memory legacyBytecode_, address sender_) internal returns (uint256, address, address) {
     _legacyId += 1;
-    nonceByUsers[sender_] += 1;
-    bytes32 salt = keccak256(abi.encodePacked(sender_, nonceByUsers[sender_]));
-    address legacyAddress = Create2.deploy(0, salt, legacyBytecode_);
-    address guardAddress = Create2.deploy(0, salt, guardByteCode_);
+    (address legacyAddress, address guardAddress) = ILegacyDeployer(legacyDeployerContract).createLegacy(legacyBytecode_,sender_);
     legacyAddresses[_legacyId] = legacyAddress;
     guardAddresses[_legacyId] = guardAddress;
     isCreateLegacy[sender_] = true;

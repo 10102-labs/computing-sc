@@ -10,16 +10,9 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect, use } from "chai";
 import { parseEther, parseUnits } from "ethers/lib/utils";
 import { seconds } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time/duration";
-import { LinkTokenInterface, PremiumNotification, ProxyAmin__factory, IKeeperRegistryMaster__factory, PremiumMailRouter } from "../.../../typechain-types";
+import { LinkTokenInterface, ProxyAmin__factory, IKeeperRegistryMaster__factory, PremiumMailRouter } from "../.../../typechain-types";
 
-async function genMessage(
-
-    legacyAddress: string,
-    timestamp: number): Promise<string> {
-
-    const message = `I agree to legacy at address ${legacyAddress.toLowerCase()} at timestamp ${timestamp}`;
-    return message;
-}
+import { genMessage } from "../scripts/utils/genMsg";
 
 const web3 = new Web3(process.env.RPC!);
 const user_pk = process.env.DEPLOYER_PRIVATE_KEY;
@@ -43,9 +36,6 @@ describe("Premium Automation ", async function () {
     const routerUniswap = "0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008";
     const weth = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9";
 
-
-
-    const notification = "0x02f486A3b571d938C51FC24f7a0B6251285b5032";
     const mailRouter = "0x01e8FBE1Bc34D73d86A61EbC24A0e9509C0B8799"; // mail router
     const mailBeforeActivation = "0x5C49EC40F5a512e2c4181bE1064CaCD55a930f16";
     const mailReadyToActivate = "0xDf105CA77a010860bf08fE52E454A2D5755354c6";
@@ -55,10 +45,6 @@ describe("Premium Automation ", async function () {
     const i_link = "0x779877A7B0D9E8603169DdbD7836e478b4624789";
     const i_registrar = "0xb0E49c5D0d05cbc241d68c05BC5BA1d1B7B72976";
     const keeperRegistry = "0x86EFBD0b6736Bed994962f9797049422A3A8E8Ad"
-
-    //PUSH NOTIFICATION VARIABLES
-    const enpsComm = "0x0C34d54a09CFe75BCcd878A469206Ae77E0fe6e7";
-    const channel = "0x944A402a91c3D6663f5520bFe23c1c1eE77BCa92";
 
     //CHAINLINK FUNCTION VARIABLES
     const router = "0xb83E47C2bC239B3bf370bc41e1459A34b41238D0"; //fix for sepolia
@@ -117,30 +103,30 @@ describe("Premium Automation ", async function () {
         await verifierTerm.initialize(dev.address);
 
 
+        // deployer contract 
+        const LegacyDeployer = await ethers.getContractFactory("LegacyDeployer");
+        const legacyDeployer = await LegacyDeployer.deploy();
+        await legacyDeployer.initialize();
+
+
         const TransferEOALegacyRouter = await ethers.getContractFactory("TransferEOALegacyRouter");
         const transferEOALegacyRouter = await TransferEOALegacyRouter.deploy();
-        await transferEOALegacyRouter.initialize(setting.address, verifierTerm.address, payment.address); // fork setting contract 
-        await transferEOALegacyRouter.setSwapSettings(router, weth);
+        await transferEOALegacyRouter.initialize(legacyDeployer.address, setting.address, verifierTerm.address, payment.address, router, weth); // fork setting contract 
 
         const TransferLegacyRouter = await ethers.getContractFactory("TransferLegacyRouter");
         const transferLegacyRouter = await TransferLegacyRouter.deploy();
-        await transferLegacyRouter.initialize(setting.address, verifierTerm.address, payment.address);
-        await transferLegacyRouter.setSwapSettings(router, weth);
+        await transferLegacyRouter.initialize(legacyDeployer.address, setting.address, verifierTerm.address, payment.address, router, weth);
 
+        const MultisignLegacyRouter = await ethers.getContractFactory("MultisigLegacyRouter");
+        const multisignLegacyRouter = await MultisignLegacyRouter.deploy();
+        await multisignLegacyRouter.initialize(legacyDeployer.address, setting.address, verifierTerm.address);
+
+        await legacyDeployer.setParams(multisignLegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
 
 
         await verifierTerm.connect(dev).setRouterAddresses(transferEOALegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
 
         const proxyAdmin = ProxyAmin__factory.connect("0x04F77bbc5AE606e0e1424A6e85762a95114AcBe4", dev);
-
-
-
-        const premiumNotification = (await ethers.getContractAt("PremiumNotification", notification)) as PremiumNotification;
-        //deploy local notification and upgrade
-        const PremiumNotification = await ethers.getContractFactory("PremiumNotification");
-        const premiumNotificationV2 = await PremiumNotification.deploy();
-        await proxyAdmin.connect(dev).upgrade(premiumNotification.address, premiumNotificationV2.address);
-        await premiumNotification.connect(dev).setUpPush(enpsComm, channel, premiumAutomationManager.address, setting.address);
 
 
         //deploy local sendmail and upgrade
@@ -151,11 +137,11 @@ describe("Premium Automation ", async function () {
 
         await premiumMailRouter.connect(dev).setParams(mailBeforeActivation,mailActivated, mailReadyToActivate , setting.address, premiumAutomationManager.address);
 
-        await premiumAutomationManager.connect(dev).setParams(i_link, i_registrar, keeperRegistry, setting.address, "500000", notification, premiumMailRouter.address, 150);
+        await premiumAutomationManager.connect(dev).setParams(i_link, i_registrar, keeperRegistry, setting.address, "500000", premiumMailRouter.address, 150);
 
         //set up
-        await setting.connect(dev).setParams(registry.address, transferEOALegacyRouter.address, transferLegacyRouter.address, transferEOALegacyRouter.address);
-        await setting.connect(dev).setUpReminder(premiumAutomationManager.address, premiumNotification.address, premiumMailRouter.address);
+        await setting.connect(dev).setParams(registry.address, transferEOALegacyRouter.address, transferLegacyRouter.address,  multisignLegacyRouter.address);
+        await setting.connect(dev).setUpReminder(premiumAutomationManager.address, premiumMailRouter.address);
 
 
 
@@ -193,25 +179,17 @@ describe("Premium Automation ", async function () {
             user1,
             user2,
             user3,
-            premiumNotification,
             premiumMailRouter,
             transferLegacyRouter
         }
 
     }
-    it("should deploy fixture successfully", async function () {
+    it.only("should deploy fixture successfully", async function () {
         const { dev,
             premiumAutomationManager,
             link } = await loadFixture(deployFixture);
 
         // await premiumAutomationManager.connect(dev).createCronjob(dev.address);
-    })
-
-    it("should send push noti successfully", async function () {
-        const { dev, premiumNotification } = await loadFixture(deployFixture);
-        console.log(await currentBlock());
-        await premiumNotification.connect(dev).sendPushNoti([dev.address], "Title", "Body");
-
     })
 
     // it("should set cronjob job for legacy", async function () {
@@ -395,12 +373,12 @@ describe("Premium Automation ", async function () {
     //     if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
     // })
 
-    it("shoud send reminder transfer/ transfer EOA", async function () {
+    it.only("shoud send reminder transfer/ transfer EOA", async function () {
         const { dev,
             premiumAutomationManager,
             transferEOALegacyRouter,
             link, setting,
-            registry, usdc, user1, premiumNotification, premiumMailRouter, user3 } = await loadFixture(deployFixture);
+            registry, usdc, user1, premiumMailRouter, user3 } = await loadFixture(deployFixture);
 
 
 
@@ -438,7 +416,7 @@ describe("Premium Automation ", async function () {
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
         console.log(legacyAddress);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = await wallet.sign(message).signature;
 
 
@@ -501,13 +479,11 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
@@ -517,13 +493,11 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
@@ -533,13 +507,11 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
@@ -550,13 +522,11 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
         //notify 3 - before layer 3
@@ -565,13 +535,11 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
@@ -581,18 +549,15 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
         await cronjob.performUpkeep(checkUpkeepData[1]);
         checkUpkeepData = await cronjob.checkUpkeep("0x"); //false
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
         await transferEOALegacyRouter.connect(user3).activeLegacy(1,[usdc.address], true);
         console.log('Activated')
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
     })
 
@@ -602,7 +567,7 @@ describe("Premium Automation ", async function () {
             premiumAutomationManager,
             transferEOALegacyRouter,
             link, setting,
-            registry, usdc, user1, premiumNotification } = await loadFixture(deployFixture);
+            registry, usdc, user1 } = await loadFixture(deployFixture);
 
 
         const mainConfig = {
@@ -638,7 +603,7 @@ describe("Premium Automation ", async function () {
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
         console.log(legacyAddress);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = await wallet.sign(message).signature;
 
 
@@ -716,7 +681,7 @@ describe("Premium Automation ", async function () {
             premiumAutomationManager,
             transferEOALegacyRouter,
             link, setting,
-            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter } = await loadFixture(deployFixture);
+            registry, usdc, user1, user2, user3, premiumMailRouter } = await loadFixture(deployFixture);
 
 
 
@@ -757,7 +722,7 @@ describe("Premium Automation ", async function () {
         const nickName3 = "dat";
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = await wallet.sign(message).signature;
 
 
@@ -794,23 +759,21 @@ describe("Premium Automation ", async function () {
 
     //     console.log(await transferEOALegacyRouter.checkActiveLegacy(1));
 
-    //     console.log('NotifyId', await premiumNotification.notifyId());
     //     console.log('MailID', await premiumMailRouter.mailId());
 
     //     await transferEOALegacyRouter.connect(dev).avtiveAlive(1);
 
-    //     console.log('NotifyId', await premiumNotification.notifyId());
     //     console.log('MailID', await premiumMailRouter.mailId());
 
 
     })
 
-    it.only("should trigger activation reminder", async function () {
+    it("should trigger activation reminder", async function () {
         const { dev,
             premiumAutomationManager,
             transferEOALegacyRouter,
             link, setting,
-            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter } = await loadFixture(deployFixture);
+            registry, usdc, user1, user2, user3, premiumMailRouter } = await loadFixture(deployFixture);
 
 
 
@@ -851,7 +814,7 @@ describe("Premium Automation ", async function () {
         const nickName3 = "dat";
         const legacyAddress = await transferEOALegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = await wallet.sign(message).signature;
 
 
@@ -888,13 +851,11 @@ describe("Premium Automation ", async function () {
         await increase(86400);
 
         console.log(await transferEOALegacyRouter.checkActiveLegacy(1));
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
 
         await transferEOALegacyRouter.connect(user1).activeLegacy(1, [usdc.address], true);
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 
@@ -906,7 +867,7 @@ describe("Premium Automation ", async function () {
             premiumAutomationManager,
             transferEOALegacyRouter,
             link, setting,
-            registry, usdc, user1, user2, user3, premiumNotification, premiumMailRouter , transferLegacyRouter} = await loadFixture(deployFixture);
+            registry, usdc, user1, user2, user3, premiumMailRouter , transferLegacyRouter} = await loadFixture(deployFixture);
 
        
         
@@ -945,7 +906,7 @@ describe("Premium Automation ", async function () {
         const safeWallet = "0x1F845245929a537A88F70247C2A143F4E6a338B9"
         const legacyAddress = await transferLegacyRouter.getNextLegacyAddress(dev.address);
         const currentTimestamp = (await currentTime());
-        const message = await genMessage(legacyAddress, currentTimestamp);
+        const message = await genMessage(currentTimestamp);
         const signature = wallet.sign(message).signature;
 
         await transferLegacyRouter.connect(dev).createLegacy(
@@ -995,7 +956,6 @@ describe("Premium Automation ", async function () {
         console.log(checkUpkeepData);
         if (checkUpkeepData[1] != '0x') console.log(await cronjob.decodePerformData(checkUpkeepData[1]))
         console.log('Perform up keep');
-        console.log('NotifyId', await premiumNotification.notifyId());
         console.log('MailID', await premiumMailRouter.mailId());
 
 

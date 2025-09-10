@@ -5,7 +5,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "../interfaces/ISafeWallet.sol";
 import "../interfaces/IPremiumLegacy.sol";
 import "../interfaces/IPremiumAutomationManager.sol";
-import "../interfaces/IPremiumNotification.sol";
 import "../interfaces/IPremiumSendMail.sol";
 import "../interfaces/IPremiumSetting.sol";
 import "../libraries/ArrayUtils.sol";
@@ -13,24 +12,16 @@ import "../libraries/ArrayUtils.sol";
 import {TransferLegacyStruct} from "../libraries/TransferLegacyStruct.sol";
 
 contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
-  address public premiumRegistry; // contract serves for register premium package  & payment
-  mapping(address => uint) public premiumExpired; // timestamp that premium package ends
-
-  address public transferLegacyContractRouter;
-  address public transferLegacyEOAContractRouter;
-
   struct UserConfig {
     string ownerName;
     string ownerEmail;
     uint256 timePriorActivation;
   }
-
   struct EmailMapping {
     address addr;
     string email;
     string name;
   }
-
   struct LegacyConfig {
     EmailMapping[] cosigners;
     EmailMapping[] beneficiaries;
@@ -38,15 +29,18 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     EmailMapping thirdLine;
   }
 
+  mapping(address => uint) public premiumExpired; // timestamp that premium package ends
   mapping(address => UserConfig) public userConfigs;
-  mapping(address => LegacyConfig) public legacyConfigs; //UNUSED - keep here for proxy uprgade - remove in new deployment
   mapping(address => LegacyConfig) public legacyCfgs;
   mapping(uint256 => address) private legacyCodeToAddress;
   mapping(address => uint256) private legacyAddressToCode;
 
+  address public premiumRegistry; // contract serves for register premium package  & payment
+  address public transferLegacyContractRouter;
+  address public transferLegacyEOAContractRouter;
   address public multisigLegacyContractRouter;
+
   IPremiumAutomationManager public premiumAutomationManager;
-  IPremiumNotification public premiumNotification;
   IPremiumSendMail public premiumSendMail;
 
   /* Event */
@@ -140,12 +134,10 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     multisigLegacyContractRouter = _multisigLegacyContractRouter;
   }
 
-  function setUpReminder(address _premiumAutomationManager, address _premiumNotification, address _premiumSendMail) external onlyOwner {
+  function setUpReminder(address _premiumAutomationManager, address _premiumSendMail) external onlyOwner {
     if(_premiumAutomationManager == address(0)) revert InvalidParamAddress();
-    if(_premiumNotification == address(0)) revert InvalidParamAddress();
     if(_premiumSendMail == address(0)) revert InvalidParamAddress();
     premiumAutomationManager = IPremiumAutomationManager(_premiumAutomationManager);
-    premiumNotification = IPremiumNotification(_premiumNotification);
     premiumSendMail = IPremiumSendMail(_premiumSendMail);
   }
 
@@ -265,11 +257,9 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
 
 
   function triggerOwnerResetReminder(address legacyAddress) external onlyRouter {
-    if (address(premiumNotification) == address(0)) return;
     IPremiumLegacy legacy = IPremiumLegacy(legacyAddress);
     address creator = legacy.creator();
     if (!isPremium(creator)) return;
-    premiumNotification.notifyOwnerReset(legacyAddress);
     if (address(premiumSendMail) == address(0)) return;
 
     //specify which layer need to send mail
@@ -302,9 +292,7 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     string memory contractName = legacy.getLegacyName();
 
     if (!isPremium(creator)) return;
-    if (address(premiumNotification) == address(0)) return;
     (, string[] memory beneEmails, string[] memory beneNames) = getBeneficiaryData(legacyAddress);
-    premiumNotification.notifyMultisigActivation(legacyAddress);
     if (address(premiumSendMail) == address(0)) return;
     premiumSendMail.sendMailActivatedMultisig(beneNames, beneEmails, contractName, safeWallet);
   }
@@ -321,9 +309,7 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
 
     if (!isPremium(creator)) return;
 
-    if (address(premiumNotification) == address(0)) return;
     uint8 layerActivated = legacy.getBeneficiaryLayer(tx.origin);
-    premiumNotification.notifyTransferActivation(layerActivated, msg.sender, contractName, remaining);
 
     if (address(premiumSendMail) == address(0)) return;
     (, string memory ownerEmail, ) = getUserData(creator);
@@ -476,7 +462,7 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     if (newCfg.secondLine.addr == address(0)) {
       require(bytes(newCfg.secondLine.email).length == 0, "secondline invalid pair of address and email");
     } else {
-      require(legacy.getDistribution(2, newCfg.secondLine.addr) != 0, "invalid address");
+      require(legacy.getDistribution(2, newCfg.secondLine.addr) != 0, "invalid secondline address");
       cfg.secondLine = newCfg.secondLine;
     }
     if (newCfg.thirdLine.addr == address(0)) {

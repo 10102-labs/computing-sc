@@ -2,12 +2,10 @@
 // OpenZeppelin Contracts v5.x
 pragma solidity 0.8.20;
 
-import {AccessGuard} from "../access/AccessGuard.sol";
-
-contract LegacyRouter is AccessGuard {
+contract LegacyRouter {
   /* State variable */
   // guard storage slot in safe wallet
-  uint256 public constant BENEFICIARIES_LIMIT = 10;
+  uint256 public constant BENEFICIARIES_LIMIT = 32;
 
   /* Internal function */
   /**

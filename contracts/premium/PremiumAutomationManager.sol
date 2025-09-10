@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../libraries/NotifyLib.sol";
 import "../interfaces/IPremiumLegacy.sol";
 import "./PremiumAutomation.sol";
-import "../interfaces/IPremiumNotification.sol";
 import "../interfaces/IPremiumSendMail.sol";
 import {LinkTokenInterface} from "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import "../libraries/ArrayUtils.sol";
@@ -38,32 +37,23 @@ interface IKeeperRegistryMaster {
 
 contract PremiumAutomationManager is OwnableUpgradeable {
   using NotifyLib for *;
+  
   LinkTokenInterface public i_link;
   AutomationRegistrarInterface public i_registrar;
+  IPremiumSendMail public premiumSendMail; //SendMail Router
+  IKeeperRegistryMaster public keeperRegistry; // to add fund dynamically
+  address public premiumSetting;
+
   mapping(address => uint256) public nonceByUsers;
   mapping(address => address) public cronjob; //store cron-job contract address for each user
-  address public premiumSetting;
-  uint32 baseGasLimit; //500000 1000000
-
-  IPremiumNotification public notification;
-
+  
+  uint32 baseGasLimit; 
   uint256 public defaultNotifyAhead; // time to notify before activation if user doesn't set it
-
-  IPremiumSendMail public premiumSendMail; //SendMail Router
-
-  IKeeperRegistryMaster public keeperRegistry; // to add fund dynamically
   uint256 notifyId;
 
 
   event CronjobCreated(address indexed user, address indexed cronjobAddress);
   event LegacyAdded(address indexed user, address[] indexed legacyAddress, address indexed cronjobAddress);
-  event NotificationSent(
-    address indexed legacy,
-    NotifyLib.NotifyType notifyType,
-    NotifyLib.RecipientType recipientType,
-    address[] recipients,
-    string body
-  );
 
   modifier onlySetting() {
     require(msg.sender == premiumSetting || msg.sender == owner(), "only setting");
@@ -86,14 +76,12 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     address _keeperRegistry,
     address _premiumSetting,
     uint32 _baseGasLimit,
-    address _notification,
     address _premiumSendMail, //send mail router 
     uint256 _defaultNotifyAhead
   ) external onlyOwner {
     require(_i_link != address(0), "invalid _i_link");
     require(_i_registrar != address(0), "invalid _i_registrar");
     require(_premiumSetting != address(0), "invalid _premiumSetting");
-    require(_notification != address(0), "invalid _notification");
     require(_baseGasLimit > 0, "invaid _baseGasLimit");
     require(_defaultNotifyAhead > 0, "invalid _defaultNotifyAhead");
 
@@ -102,7 +90,6 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     i_registrar = AutomationRegistrarInterface(_i_registrar);
     keeperRegistry = IKeeperRegistryMaster(_keeperRegistry);
     baseGasLimit = _baseGasLimit;
-    notification = IPremiumNotification(_notification);
     defaultNotifyAhead = _defaultNotifyAhead;
     premiumSendMail = IPremiumSendMail(_premiumSendMail);
     i_link.approve(address(keeperRegistry), type(uint256).max);
@@ -146,7 +133,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     cronjob[user] = cronjobAddress;
 
     RegistrationParams memory params = RegistrationParams({
-      name: string.concat("Cronjob ", Strings.toHexString(user)),
+      name: string.concat("UAT Cronjob ", Strings.toHexString(user)),
       encryptedEmail: "",
       upkeepContract: cronjobAddress,
       gasLimit: baseGasLimit,
@@ -185,10 +172,6 @@ contract PremiumAutomationManager is OwnableUpgradeable {
   }
 
   function sendNotifyFromCronjob(address legacy, NotifyLib.NotifyType notifyType) external onlyCronjob {
-    if (address(notification) != address(0)) {
-      _sendPushFromManager(legacy, notifyType);
-    }
-
     //send email
     if (address(premiumSendMail) != address(0)) {
       _sendEmailFromManager(legacy, notifyType);
@@ -199,19 +182,10 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     _fundKeepupIfNeeded(keepupId);
   }
 
-  function sendPushFromManager(address legacy, NotifyLib.NotifyType notifyType) external onlyOwner {
-    _sendPushFromManager(legacy, notifyType);
-  }
 
   function sendEmailFromManager(address legacy, NotifyLib.NotifyType notifyType) external onlyOwner {
     _sendEmailFromManager(legacy, notifyType);
   }
-
-
-  function _sendPushFromManager(address legacy, NotifyLib.NotifyType notifyType) internal {
-    notification.handleLegacyNotify(legacy, notifyType);
-  }
-
 
   function _sendEmailFromManager(address legacy, NotifyLib.NotifyType notifyType) internal {
     // return;

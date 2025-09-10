@@ -59,7 +59,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   );
   event TransferEOALegacyTriggerUpdated(uint256 legacyId, uint128 lackOfOutgoingTxRange, uint256 timestamp);
   event TransferEOALegacyNameNoteUpdated(uint256 legacyId, string name, string note, uint256 timestamp);
-  event TransferEOALegacyActivated(uint256 legacyId, uint8 layer, address[] assetAddresses, bool isETH, uint256 timestamp);
+  event TransferEOALegacyActivated(uint256 legacyId, uint8 layer, uint256 timestamp);
   event TransferEOALegacyActivedAlive(uint256 legacyId, uint256 timestamp);
   event TransferEOALegacyDeleted(uint256 legacyId, uint256 timestamp);
   event TransferEOALegacyLayer23DistributionUpdated(
@@ -71,9 +71,10 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   );
   event TransferEOALegacyLayer23Created(uint256 legacyId, uint8 layer, TransferLegacyStruct.Distribution distribution, string nickName);
 
-  function initialize(address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
-    if(_premiumSetting == address(0) ||
+  function initialize(address _deployerContract, address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
+    if(_deployerContract == address(0) ||  _premiumSetting == address(0) ||
     _verifier == address(0) || _paymentContract == address(0) || router_ == address(0)  || weth_ == address(0)) revert InvalidInitialization();
+    legacyDeployerContract = _deployerContract;
     premiumSetting = _premiumSetting;
     verifier = IEIP712LegacyVerifier(_verifier);
     paymentContract = _paymentContract;
@@ -268,11 +269,12 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     if (isETH_ == false && assets_.length == 0) revert NumAssetsInvalid();
 
     //Active legacy
-    (address[] memory assets, uint8 currentLayer) = ITransferEOALegacy(legacyAddress).activeLegacy(assets_, isETH_, msg.sender);
+    ITransferEOALegacy(legacyAddress).activeLegacy(assets_, isETH_, msg.sender);
     uint8 beneLayer = ITransferEOALegacy(legacyAddress).getBeneficiaryLayer(msg.sender);
+    uint8 currentLayer = ITransferEOALegacy(legacyAddress).getLayer();
     if (beneLayer > currentLayer) revert CannotClaim();
     if (beneLayer == 0) revert OnlyBeneficaries();
-    emit TransferEOALegacyActivated(legacyId_, beneLayer, assets, isETH_, block.timestamp);
+    emit TransferEOALegacyActivated(legacyId_, beneLayer, block.timestamp);
   }
 
   function deleteLegacy(uint256 legacyId_) external  {

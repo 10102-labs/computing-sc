@@ -60,7 +60,7 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
   event TransferLegacyDistributionUpdated(uint256 legacyId, string[] nickNames, TransferLegacyStruct.Distribution[] distributions, uint256 timestamp);
   event TransferLegacyTriggerUpdated(uint256 legacyId, uint128 lackOfOutgoingTxRange, uint256 timestamp);
   event TransferLegacyNameNoteUpdated(uint256 legacyId, string name, string note, uint256 timestamp);
-  event TransferLegacyActivated(uint256 legacyId, uint8 layer, address[] assetAddresses, bool isETH, uint256 timestamp);
+  event TransferLegacyActivated(uint256 legacyId, uint8 layer, uint256 timestamp);
   event TransferLegacyLayer23DistributionUpdated(
     uint256 legacyId,
     uint8 layer,
@@ -76,7 +76,8 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
     _;
   }
 
-  function initialize(address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
+  function initialize(address _deployerContract, address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
+    legacyDeployerContract = _deployerContract;
     premiumSetting = _premiumSetting;
     verifier = EIP712LegacyVerifier(_verifier);
     paymentContract = _paymentContract;
@@ -136,7 +137,6 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
 
     (uint256 newLegacyId, address legacyAddress, address guardAddress) = _createLegacy(
       type(TransferLegacy).creationCode,
-      type(SafeGuard).creationCode,
       msg.sender
     );
 
@@ -163,7 +163,7 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
     ITransferLegacy(legacyAddress).setLegacyName(mainConfig_.name);
    
 
-    ISafeGuard(guardAddress).initialize();
+    ISafeGuard(guardAddress).initialize(safeWallet);
 
     if (!_checkNumBeneficiariesLimit(numberOfBeneficiaries)) revert NumBeneficiariesInvalid();
     TransferLegacyStruct.LegacyExtraConfig memory _legacyExtraConfig = TransferLegacyStruct.LegacyExtraConfig({
@@ -330,11 +330,12 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
     if (isETH_ == false && assets_.length == 0) revert NumAssetsInvalid();
 
     //Active legacy
-    (address[] memory assets, uint8 currentLayer) = ITransferLegacy(legacyAddress).activeLegacy(guardAddress, assets_, isETH_, msg.sender);
+    ITransferLegacy(legacyAddress).activeLegacy(guardAddress, assets_, isETH_, msg.sender);
     uint8 beneLayer = ITransferLegacy(legacyAddress).getBeneficiaryLayer(msg.sender);
+    uint8 currentLayer = ITransferLegacy(legacyAddress).getLayer();
     if (beneLayer > currentLayer) revert CannotClaim();
     if (beneLayer == 0) revert OnlyBeneficaries();
-    emit TransferLegacyActivated(legacyId_, beneLayer, assets, isETH_, block.timestamp);
+    emit TransferLegacyActivated(legacyId_, beneLayer, block.timestamp);
 
   }
 

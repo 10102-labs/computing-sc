@@ -44,7 +44,7 @@ interface ITransferEOALegacy {
 
   function activeAlive(address sender_) external;
 
-  function activeLegacy(address[] calldata assets_, bool isETH_, address bene_) external returns (address[] memory assets, uint8 layer);
+  function activeLegacy(address[] calldata assets_, bool isETH_, address bene_) external;
 
   function deleteLegacy(address sender_) external;
 
@@ -66,6 +66,8 @@ interface ITransferEOALegacy {
   function setLegacyName(string calldata legacyName_) external;
 
   function getBeneficiaryLayer(address beneficiary) external view returns (uint8);
+
+  function getLayer() external view returns (uint8);
 
   //function setSwapSettings(address _router, address _weth,address _paymentContract) external ;
 }

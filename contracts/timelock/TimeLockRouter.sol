@@ -12,9 +12,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
-import {ISafeWallet} from "../interfaces/ISafeWallet.sol";
 
-import {Enum} from "../libraries/Enum.sol";
+import {Enum} from "@safe-global/safe-smart-account/contracts/common/Enum.sol";
+
 import {TimelockHelper} from "./TimelockHelper.sol";
 
 contract TimeLockRouter is OwnableUpgradeable {
@@ -119,43 +119,6 @@ contract TimeLockRouter is OwnableUpgradeable {
     }
   }
 
-  function createTimelockWithSafe(TimelockRegular calldata timelockRegular, address safeAddress) external {
-    if (timelockRegular.duration == 0) revert TimelockHelper.ZeroDuration();
-
-    timelockCounter++;
-
-    if (timelockRegular.timelockERC20.length > 0) {
-      _handleTimelockRegularERC20(
-        timelockCounter,
-        timelockRegular.timelockERC20,
-        timelockRegular.duration,
-        timelockRegular.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-    if (timelockRegular.timelockERC721.length > 0) {
-      _handleTimelockRegularERC721(
-        timelockCounter,
-        timelockRegular.timelockERC721,
-        timelockRegular.duration,
-        timelockRegular.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-    if (timelockRegular.timelockERC1155.length > 0) {
-      _handleTimelockRegularERC1155(
-        timelockCounter,
-        timelockRegular.timelockERC1155,
-        timelockRegular.duration,
-        timelockRegular.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-  }
-
   function getStatusOwner(uint256 id) public view returns (TimelockHelper.LockStatus, address) {
     (TimelockHelper.LockStatus status, address owner) = timelockERC20Contract.getStatus(id);
     if (status == TimelockHelper.LockStatus.Null) {
@@ -165,71 +128,6 @@ contract TimeLockRouter is OwnableUpgradeable {
       (status, owner) = timelockERC1155Contract.getStatus(id);
     }
     return (status, owner);
-  }
-
-  function makeLiveBySafe(uint256 id) external {
-    (TimelockHelper.LockStatus status, address safe) = getStatusOwner(id);
-    if (status != TimelockHelper.LockStatus.Created) revert TimelockHelper.InvalidStatus();
-    if (safe != msg.sender) revert TimelockHelper.NotOwner();
-
-    // transfer
-    _handleSafeTransferERC20(id, safe);
-    _handleSafeTransferERC721(id, safe);
-    _handleSafeTransferERC1155(id, safe);
-
-    timelockERC20Contract.changeStatus(id, TimelockHelper.LockStatus.Live);
-    timelockERC721Contract.changeStatus(id, TimelockHelper.LockStatus.Live);
-    timelockERC1155Contract.changeStatus(id, TimelockHelper.LockStatus.Live);
-  }
-
-  function _handleSafeTransferERC20(uint256 id, address safe) internal {
-    (address[] memory tokens, uint256[] memory amounts) = TimelockERC20(timelockERC20Contract).getData(id);
-    if (tokens.length == 0) return;
-
-    for (uint256 i = 0; i < tokens.length; i++) {
-      if (tokens[i] == NATIVE_TOKEN) {
-        bool transferEthSuccess = ISafeWallet(safe).execTransactionFromModule(address(timelockERC20Contract), amounts[i], "", Enum.Operation.Call);
-        if (!transferEthSuccess) revert TimelockHelper.ExecTransactionFromModuleFailed();
-      } else {
-        bytes memory transferErc20Data = abi.encodeWithSignature("transfer(address,uint256)", address(timelockERC20Contract), amounts[i]);
-        bool transferErc20Success = ISafeWallet(safe).execTransactionFromModule(tokens[i], 0, transferErc20Data, Enum.Operation.Call);
-        if (!transferErc20Success) revert TimelockHelper.ExecTransactionFromModuleFailed();
-      }
-    }
-  }
-
-  function _handleSafeTransferERC721(uint256 id, address safe) internal {
-    (address[] memory tokens, uint256[] memory ids) = TimelockERC721(timelockERC721Contract).getData(id);
-    if (tokens.length == 0) return;
-
-    for (uint256 i = 0; i < tokens.length; i++) {
-      bytes memory transferErc721Data = abi.encodeWithSignature(
-        "transferFrom(address,address,uint256)",
-        safe,
-        address(timelockERC721Contract),
-        ids[i]
-      );
-      bool transferErc721Success = ISafeWallet(safe).execTransactionFromModule(tokens[i], 0, transferErc721Data, Enum.Operation.Call);
-      if (!transferErc721Success) revert TimelockHelper.ExecTransactionFromModuleFailed();
-    }
-  }
-
-  function _handleSafeTransferERC1155(uint256 id, address safe) internal {
-    (address[] memory tokens, uint256[] memory ids, uint256[] memory amounts) = TimelockERC1155(timelockERC1155Contract).getData(id);
-    if (tokens.length == 0) return;
-
-    for (uint256 i = 0; i < tokens.length; i++) {
-      bytes memory transferErc1155Data = abi.encodeWithSignature(
-        "safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)",
-        safe,
-        address(timelockERC1155Contract),
-        ids,
-        amounts,
-        ""
-      );
-      bool transferErc1155Success = ISafeWallet(safe).execTransactionFromModule(tokens[i], 0, transferErc1155Data, Enum.Operation.Call);
-      if (!transferErc1155Success) revert TimelockHelper.ExecTransactionFromModuleFailed();
-    }
   }
 
   function createSoftTimelock(TimelockSoft calldata timelockSoft) external payable {
