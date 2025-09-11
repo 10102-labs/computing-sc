@@ -1,13 +1,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../interfaces/IPremiumSetting.sol";
 
-contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
+contract PremiumRegistry is AccessControlUpgradeable {
   struct PremiumPlan {
     uint256 usdPrice; //x100 (two digits after the decimal point)
     uint256 duration;
@@ -61,7 +60,6 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     address _premiumSetting,
     address _payment
   ) public initializer {
-    __Ownable_init(msg.sender);
     __AccessControl_init();
     _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     _grantRole(OPERATOR, msg.sender);
