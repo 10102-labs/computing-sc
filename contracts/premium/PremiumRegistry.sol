@@ -22,7 +22,6 @@ contract PremiumRegistry is AccessControlUpgradeable {
 
   IPremiumSetting public premiumSetting;
 
-  bytes32 public constant DEPOSITOR = keccak256("DEPOSITOR"); // deposit LINK to this contract
   bytes32 public constant OPERATOR = keccak256("OPERATOR");
 
   PremiumPlan[] public premiumPlans;
