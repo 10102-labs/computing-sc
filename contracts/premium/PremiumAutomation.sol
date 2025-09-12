@@ -113,7 +113,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
     return (false, "");
   }
 
-  function performUpkeep(bytes calldata data) external override {
+  function performUpkeep(bytes calldata data) external onlyForwarder override {
     if(!setting.isPremium((user))) return;
     (address legacy, NotifyLib.NotifyType notifyType) = abi.decode(data, (address, NotifyLib.NotifyType));
     //Already sent when contract activated 
