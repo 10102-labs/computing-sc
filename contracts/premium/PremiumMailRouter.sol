@@ -16,12 +16,12 @@ contract PremiumMailRouter is OwnableUpgradeable {
   uint256 public mailId;
 
   modifier onlySetting() {
-    require(msg.sender == premiumSetting || msg.sender == owner(), "Only setting");
+    require(msg.sender == premiumSetting, "Only setting");
     _;
   }
 
   modifier onlyManager() {
-    require(msg.sender == automationManager || msg.sender == owner(), "Only automation manager");
+    require(msg.sender == automationManager, "Only automation manager");
     _;
   }
 

@@ -56,7 +56,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
   event LegacyAdded(address indexed user, address[] indexed legacyAddress, address indexed cronjobAddress);
 
   modifier onlySetting() {
-    require(msg.sender == premiumSetting || msg.sender == owner(), "only setting");
+    require(msg.sender == premiumSetting, "only setting");
     _;
   }
 
