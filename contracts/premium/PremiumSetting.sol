@@ -43,6 +43,8 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
   IPremiumAutomationManager public premiumAutomationManager;
   IPremiumSendMail public premiumSendMail;
 
+  mapping(address => address[]) private legacyQueuedToAddCronjob; // legacy that user created when not subcribe premium
+
   /* Event */
   event PremiumTimeUpdated(address indexed user, uint256 newExpiredTime);
   event PremiumReset(address indexed user);
@@ -204,6 +206,12 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     }
 
     emit PremiumTimeUpdated(user, premiumExpired[user]);
+
+    //add queued legacy to cronjob
+    if (address(premiumAutomationManager) != address(0)) {
+      premiumAutomationManager.addLegacyCronjob(user, legacyQueuedToAddCronjob[user]);
+      delete legacyQueuedToAddCronjob[user];
+    }
   }
 
   /* LEGACY ROUTER FUNCTIONS*/
@@ -245,16 +253,12 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     _setPrivateCodeIfNeeded(legacyAddress);
     address[] memory legacyAddresses = new address[](1);
     legacyAddresses[0] = legacyAddress;
-    if (address(premiumAutomationManager) != address(0)) {
+    if (isPremium(user) && address(premiumAutomationManager) != address(0)) {
       premiumAutomationManager.addLegacyCronjob(user, legacyAddresses);
+    } else {
+      legacyQueuedToAddCronjob[user].push(legacyAddress);
     }
   }
-
-  ///@notice set private code for legacy of premium user
-  function setPrivateCodeIfNeeded(address legacyAddress) public onlyRouter {
-    _setPrivateCodeIfNeeded(legacyAddress);
-  }
-
 
   function triggerOwnerResetReminder(address legacyAddress) external onlyRouter {
     IPremiumLegacy legacy = IPremiumLegacy(legacyAddress);

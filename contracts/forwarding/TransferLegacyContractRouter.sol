@@ -286,9 +286,19 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
     string calldata nickname_,
     TransferLegacyStruct.Distribution calldata distribution_
   ) external onlySafeWallet(legacyId_) {
-    address legacyAddress = _checkLegacyExisted(legacyId_);
-    ITransferLegacy(legacyAddress).setLayer23Distributions(msg.sender, layer_, nickname_, distribution_);
-    emit TransferLegacyLayer23DistributionUpdated(legacyId_, layer_, nickname_, distribution_, block.timestamp);
+   _setLayer23Distributions(legacyId_, layer_, nickname_, distribution_);
+  }
+
+    function setBothLayer23Distributions(
+    uint256 legacyId_,
+    string calldata nicknameLayer2_,
+    TransferLegacyStruct.Distribution calldata layer2Distribution_,
+    string calldata nicknameLayer3_,
+    TransferLegacyStruct.Distribution calldata layer3Distribution_
+  ) external onlySafeWallet(legacyId_) {
+    _setLayer23Distributions(legacyId_, 2, nicknameLayer2_, layer2Distribution_);
+    _setLayer23Distributions(legacyId_, 3, nicknameLayer3_, layer3Distribution_);
+
   }
 
   /**
@@ -340,5 +350,14 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
   }
 
   /* Internal function */
-
+    function _setLayer23Distributions(
+    uint256 legacyId_,
+    uint8 layer_,
+    string calldata nickname_,
+    TransferLegacyStruct.Distribution calldata distribution_
+  ) internal {
+    address legacyAddress = _checkLegacyExisted(legacyId_);
+    ITransferLegacy(legacyAddress).setLayer23Distributions(msg.sender, layer_, nickname_, distribution_);
+    emit TransferLegacyLayer23DistributionUpdated(legacyId_, layer_, nickname_, distribution_, block.timestamp);
+  }
 }

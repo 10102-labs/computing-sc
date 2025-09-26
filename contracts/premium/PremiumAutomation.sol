@@ -113,7 +113,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
     return (false, "");
   }
 
-  function performUpkeep(bytes calldata data) external onlyForwarder override {
+  function performUpkeep(bytes calldata data) external override {
     if(!setting.isPremium((user))) return;
     (address legacy, NotifyLib.NotifyType notifyType) = abi.decode(data, (address, NotifyLib.NotifyType));
     //Already sent when contract activated 
@@ -129,7 +129,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
   function addLegacyIfNeed(address[] memory legacyAddresses) external onlyManager {
     for (uint256 i = 0; i < legacyAddresses.length; i++) {
       address legacy = legacyAddresses[i];
-      if (enableNotify[legacy] == false) {
+      if (enableNotify[legacy] == false  && _checkGuardInSafeWalletLegacy(legacy) && IPremiumLegacy(legacy).isLive()) {
         legacyContracts.push(legacy);
         enableNotify[legacy] = true;
       }

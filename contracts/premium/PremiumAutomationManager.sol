@@ -56,7 +56,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
   event LegacyAdded(address indexed user, address[] indexed legacyAddress, address indexed cronjobAddress);
 
   modifier onlySetting() {
-    require(msg.sender == premiumSetting, "only setting");
+    require(msg.sender == premiumSetting || msg.sender == owner(), "only setting");
     _;
   }
 
@@ -133,7 +133,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     cronjob[user] = cronjobAddress;
 
     RegistrationParams memory params = RegistrationParams({
-      name: string.concat("UAT Cronjob ", Strings.toHexString(user)),
+      name: string.concat("Cronjob ", Strings.toHexString(user)),
       encryptedEmail: "",
       upkeepContract: cronjobAddress,
       gasLimit: baseGasLimit,
@@ -263,11 +263,12 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
     (uint256 t1, , ) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
     (string memory ownerName, string memory ownerEmail, ) = IPremiumSetting(premiumSetting).getUserData(IPremiumLegacy(legacy).creator());
-    (address[] memory beneAddrs, string[] memory beneEmails, string[] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
+    (, string[] memory beneEmails, string[] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
+    (address []  memory  beneficiares ,,) = IPremiumLegacy(legacy).getLegacyBeneficiaries();
     uint256 lastTimestamp = IPremiumLegacy(legacy).getLastTimestamp();
     // 1.to owner
     if (bytes(ownerEmail).length != 0) {
-      premiumSendMail.sendEmailBeforeActivationToOwner(ownerName, contractName, lastTimestamp, t1-lastTimestamp, beneAddrs, ownerEmail);
+      premiumSendMail.sendEmailBeforeActivationToOwner(ownerName, contractName, lastTimestamp, t1-lastTimestamp, beneficiares, ownerEmail);
     }
 
     // 2.to beneficiary

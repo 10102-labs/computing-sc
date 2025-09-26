@@ -71,9 +71,22 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   );
   event TransferEOALegacyLayer23Created(uint256 legacyId, uint8 layer, TransferLegacyStruct.Distribution distribution, string nickName);
 
-  function initialize(address _deployerContract, address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
-    if(_deployerContract == address(0) ||  _premiumSetting == address(0) ||
-    _verifier == address(0) || _paymentContract == address(0) || router_ == address(0)  || weth_ == address(0)) revert InvalidInitialization();
+  function initialize(
+    address _deployerContract,
+    address _premiumSetting,
+    address _verifier,
+    address _paymentContract,
+    address router_,
+    address weth_
+  ) external initializer {
+    if (
+      _deployerContract == address(0) ||
+      _premiumSetting == address(0) ||
+      _verifier == address(0) ||
+      _paymentContract == address(0) ||
+      router_ == address(0) ||
+      weth_ == address(0)
+    ) revert InvalidInitialization();
     legacyDeployerContract = _deployerContract;
     premiumSetting = _premiumSetting;
     verifier = IEIP712LegacyVerifier(_verifier);
@@ -88,7 +101,6 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   function getNextLegacyAddress(address sender_) external view returns (address) {
     return _getNextAddress(type(TransferEOALegacy).creationCode, sender_);
   }
-
 
   function checkActiveLegacy(uint256 legacyId_) external view returns (bool) {
     address legacyAddress = _checkLegacyExisted(legacyId_);
@@ -178,7 +190,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     TransferLegacyStruct.Distribution calldata layer3Distribution_,
     string calldata nickName2,
     string calldata nickName3
-  ) external  {
+  ) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
 
     bool isPremium = IPremiumSetting(premiumSetting).isPremium(msg.sender);
@@ -186,7 +198,11 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     if (mainConfig_.distributions.length != mainConfig_.nickNames.length || mainConfig_.distributions.length == 0) revert DistributionsInvalid();
     if (extraConfig_.lackOfOutgoingTxRange == 0) revert ActivationTriggerInvalid();
 
-    uint256 numberBeneficiaries = ITransferEOALegacy(legacyAddress).setLegacyDistributions(msg.sender, mainConfig_.distributions, mainConfig_.nickNames);
+    uint256 numberBeneficiaries = ITransferEOALegacy(legacyAddress).setLegacyDistributions(
+      msg.sender,
+      mainConfig_.distributions,
+      mainConfig_.nickNames
+    );
     if (!_checkNumBeneficiariesLimit(numberBeneficiaries)) revert NumBeneficiariesInvalid();
 
     // Set activation trigger
@@ -212,7 +228,6 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     }
 
     ITransferEOALegacy(legacyAddress).setLegacyName(mainConfig_.name);
-    
 
     // Emit final config update
     TransferLegacyStruct.LegacyExtraConfig memory _legacyExtraConfig = TransferLegacyStruct.LegacyExtraConfig({
@@ -231,7 +246,6 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   ) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
     if (distributions_.length != nickNames_.length || distributions_.length == 0) revert DistributionsInvalid();
-
     uint256 numberOfBeneficiaries = ITransferEOALegacy(legacyAddress).setLegacyDistributions(msg.sender, distributions_, nickNames_);
     if (!_checkNumBeneficiariesLimit(numberOfBeneficiaries)) revert NumBeneficiariesInvalid();
 
@@ -244,27 +258,36 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     string calldata nickname_,
     TransferLegacyStruct.Distribution calldata distribution_
   ) external {
-    address legacyAddress = _checkLegacyExisted(legacyId_);
-    ITransferEOALegacy(legacyAddress).setLayer23Distributions(msg.sender, layer_, nickname_, distribution_);
-    emit TransferEOALegacyLayer23DistributionUpdated(legacyId_, layer_, nickname_, distribution_, block.timestamp);
+    _setLayer23Distributions(legacyId_, layer_, nickname_, distribution_);
+  }
+
+
+    function setBothLayer23Distributions(
+    uint256 legacyId_,
+    string calldata nicknameLayer2_,
+    TransferLegacyStruct.Distribution calldata layer2Distribution_,
+    string calldata nicknameLayer3_,
+    TransferLegacyStruct.Distribution calldata layer3Distribution_
+
+  ) external {
+    _setLayer23Distributions(legacyId_, 2, nicknameLayer2_, layer2Distribution_);
+    _setLayer23Distributions(legacyId_, 3, nicknameLayer3_, layer3Distribution_);
   }
 
   function setActivationTrigger(uint256 legacyId_, uint128 lackOfOutgoingTxRange_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
     if (lackOfOutgoingTxRange_ == 0) revert ActivationTriggerInvalid();
-
     ITransferEOALegacy(legacyAddress).setActivationTrigger(msg.sender, lackOfOutgoingTxRange_);
     emit TransferEOALegacyTriggerUpdated(legacyId_, lackOfOutgoingTxRange_, block.timestamp);
   }
 
   function setNameNote(uint256 legacyId_, string calldata name_, string calldata note_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
-    ITransferEOALegacy(legacyAddress).activeAlive(msg.sender);
     ITransferEOALegacy(legacyAddress).setLegacyName(name_);
     emit TransferEOALegacyNameNoteUpdated(legacyId_, name_, note_, block.timestamp);
   }
 
-  function activeLegacy(uint256 legacyId_, address[] calldata assets_, bool isETH_) external  {
+  function activeLegacy(uint256 legacyId_, address[] calldata assets_, bool isETH_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
     if (isETH_ == false && assets_.length == 0) revert NumAssetsInvalid();
 
@@ -277,7 +300,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     emit TransferEOALegacyActivated(legacyId_, beneLayer, block.timestamp);
   }
 
-  function deleteLegacy(uint256 legacyId_) external  {
+  function deleteLegacy(uint256 legacyId_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
     isCreateLegacy[msg.sender] = false;
 
@@ -285,8 +308,19 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     emit TransferEOALegacyDeleted(legacyId_, block.timestamp);
   }
 
-  function withdraw(uint256 legacyId_, uint256 amount_) external  {
+  function withdraw(uint256 legacyId_, uint256 amount_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
     ITransferEOALegacy(legacyAddress).withdraw(msg.sender, amount_);
+  }
+
+  function _setLayer23Distributions(
+    uint256 legacyId_,
+    uint8 layer_,
+    string calldata nickname_,
+    TransferLegacyStruct.Distribution calldata distribution_
+  ) internal {
+    address legacyAddress = _checkLegacyExisted(legacyId_);
+    ITransferEOALegacy(legacyAddress).setLayer23Distributions(msg.sender, layer_, nickname_, distribution_);
+    emit TransferEOALegacyLayer23DistributionUpdated(legacyId_, layer_, nickname_, distribution_, block.timestamp);
   }
 }

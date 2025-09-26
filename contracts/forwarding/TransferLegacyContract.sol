@@ -270,12 +270,12 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
     }
 
     // Case 2: Only layer2 is set (premium users)
-    if (delayLayer2 != 0 && _layer2Distribution == 100 && delayLayer3 == 0 && _layer3Distribution == 0) {
+    if (delayLayer2 != 0 && _layer2Distribution == MAX_PERCENT && delayLayer3 == 0 && _layer3Distribution == 0) {
       return true;
     }
 
     // Case 3: Both layers are set (premium users)
-    if (delayLayer2 != 0 && _layer2Distribution == 100 && delayLayer3 != 0 && _layer3Distribution == 100) {
+    if (delayLayer2 != 0 && _layer2Distribution == MAX_PERCENT && delayLayer3 != 0 && _layer3Distribution == MAX_PERCENT) {
       return true;
     }
 
@@ -289,7 +289,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
       _distributionPercentage = 0;
       _beneficiary = address(0);
     } else {
-      _distributionPercentage = 100;
+      _distributionPercentage = MAX_PERCENT;
       if (distribution_.user == address(0)) revert DistributionUserInvalid();
       _beneficiary = distribution_.user;
     }
@@ -300,9 +300,9 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
       _layer2Distribution = _distributionPercentage;
       _setBeneNickname(_layer2Beneficiary, nickname);
     } else {
-      if (_layer2Distribution != 100 && _distributionPercentage != 0) revert NeedtoSetLayer2();
+      if (_layer2Distribution != MAX_PERCENT && _distributionPercentage != 0) revert NeedtoSetLayer2();
       if (_distributionPercentage != 0) {
-        if (_layer2Distribution != 100) revert NeedtoSetLayer2();
+        if (_layer2Distribution != MAX_PERCENT) revert NeedtoSetLayer2();
         if (_distributions[distribution_.user] != 0 || _layer2Beneficiary == distribution_.user) revert AlreadyBeneficiary();
       }
       _deleteBeneName(_layer3Beneficiary);
@@ -367,7 +367,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
       }
       _deleteBeneName(_layer3Beneficiary);
       _layer3Beneficiary = layer3Distribution_.user;
-      _layer3Distribution = 100;
+      _layer3Distribution = MAX_PERCENT;
       _setBeneNickname(_layer3Beneficiary, nickName3);
       skipCheck = false;
     } else {
@@ -466,7 +466,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
         i++;
       }
     }
-    if (totalPercent != 100) revert PercentInvalid();
+    if (totalPercent != MAX_PERCENT) revert PercentInvalid();
 
     numberOfBeneficiaries = _beneficiariesSet.length();
   }
@@ -492,7 +492,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
    * @param distribution_ distribution
    */
   function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private view {
-    if (distribution_.percent == 0 || distribution_.percent > 100) revert DistributionAssetInvalid();
+    if (distribution_.percent == 0 || distribution_.percent > MAX_PERCENT) revert DistributionAssetInvalid();
     if (distribution_.user == address(0) || distribution_.user == owner_ || _isContract(distribution_.user)) revert DistributionUserInvalid();
   }
 
@@ -544,7 +544,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
         summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: symbol});
         for (uint256 i = 0; i < beneficiaries.length; ) {
           uint256 amount = i != beneficiaries.length - 1
-            ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / 100
+            ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / MAX_PERCENT
             : address(safeAddress).balance;
           _transferEthToBeneficiary(safeAddress, beneficiaries[i], amount);
           receipt[i].listAssetName[n] = symbol;
@@ -572,7 +572,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
 
         for (uint256 j = 0; j < beneficiaries.length; ) {
           uint256 amount = j != beneficiaries.length - 1
-            ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / 100
+            ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / MAX_PERCENT
             : IERC20(assets_[i]).balanceOf(safeAddress);
           if (amount > 0) {
             _transferErc20ToBeneficiary(token, safeAddress, beneficiaries[j], amount);

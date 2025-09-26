@@ -18,6 +18,7 @@ contract GenericLegacy {
   address public router;
   string private legacyName;
   mapping (address => string) private beneName;
+  uint256 internal  MAX_PERCENT = 1000000;
 
   /* Modifier */
   modifier onlyRouter() {

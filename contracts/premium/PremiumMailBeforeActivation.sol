@@ -31,16 +31,16 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
 
 
   // email invoke name
-  uint256 constant BEFORE_ACTIVATION_TO_OWNER = 7217001;
-  uint256 constant BEFORE_ACTIVATION_TO_BENEFICIARY = 7269992;
+  uint256 constant BEFORE_ACTIVATION_TO_OWNER = 7180104;
+  uint256 constant BEFORE_ACTIVATION_TO_BENEFICIARY = 7180073;
 
-  uint256 constant BEFORE_LAYER2_TO_OWNER = 7217002;
-  uint256 constant BEFORE_LAYER2_TO_LAYER1 = 7216997;
-  uint256 constant BEFORE_LAYER2_TO_LAYER2 = 7217000;
+  uint256 constant BEFORE_LAYER2_TO_OWNER = 7179589;
+  uint256 constant BEFORE_LAYER2_TO_LAYER1 = 7180055;
+  uint256 constant BEFORE_LAYER2_TO_LAYER2 = 7180019;
 
-  uint256 constant BEFORE_LAYER3_TO_OWNER = 7216998;
-  uint256 constant BEFORE_LAYER3_TO_LAYER12 = 7216999;
-  uint256 constant BEFORE_LAYER3_TO_LAYER3 = 7217003;
+  uint256 constant BEFORE_LAYER3_TO_OWNER = 7180086;
+  uint256 constant BEFORE_LAYER3_TO_LAYER12 = 7179998;
+  uint256 constant BEFORE_LAYER3_TO_LAYER3 = 7179988;
 
   // Custom error type
   error UnexpectedRequestID(bytes32 requestId);
@@ -172,7 +172,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       authHeader,
       "';",
       "const emailData = { Messages: ",
-      "[ { From: {Email: 'app@10102.io', Name: '10102 Platform',},",
+      "[ { From: {Email: 'thao.nguyen3@sotatek.com', Name: '10102 Platform',},",
       "To: [ {Email: '",
       to,
       "', Name:'',},],",
