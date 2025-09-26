@@ -10,7 +10,7 @@ library TransferLegacyStruct {
 
   struct Distribution {
     address user;
-    uint8 percent;
+    uint256 percent;
   }
 
   struct Swap {

@@ -7,7 +7,6 @@ interface IPremiumSetting {
   function premiumExpired(address user) external view returns (uint256 expiredTimestamp);
   function isPremium(address user) external view returns (bool);
   function getTimeAhead(address user) external view returns (uint256);
-  function setPrivateCodeIfNeeded(address legacyAddress) external;
   function setPrivateCodeAndCronjob(address user, address legacyAddress) external;
   function getUserData(address user) external view returns (string memory, string memory, uint256);
   function getCosignerData(address legacyAddress) external view returns (address[] memory, string[] memory, string[] memory);

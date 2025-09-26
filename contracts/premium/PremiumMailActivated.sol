@@ -37,7 +37,6 @@ contract PremiumMailActivated is OwnableUpgradeable {
   //MAIL SERVICE
   string private constant authHeader = "";
 
-
   // State variables
   bytes32 public s_lastRequestId;
   bytes public s_lastResponse;
@@ -48,14 +47,14 @@ contract PremiumMailActivated is OwnableUpgradeable {
   uint32 public gasLimit = 300000;
 
   // email invoke name
-  uint256 constant ACTIVATED_TO_BENE = 7217007;
-  uint256 constant ACTIVATED_TO_BENE_WITH_REMAINING = 7217008;
-  uint256 constant ACTIVATED_MULTISIG = 7217009;
-  uint256 constant CONTRACT_ACTIVATED_TO_OWNER =  7217010;
+  uint256 constant ACTIVATED_TO_BENE= 7179581;
+  uint256 constant ACTIVATED_TO_BENE_WITH_REMAINING = 7179575;
+  uint256 constant ACTIVATED_MULTISIG = 7180065;
+  uint256 constant CONTRACT_ACTIVATED_TO_OWNER = 7196254;
 
-  uint256 constant OWNER_RESET_TO_BENE = 7217011;
-  uint256 constant OWNER_RESET_TO_LAYER2 = 7217011;
-  uint256 constant OWNER_RESET_TO_LAYER3 = 7217011;
+  uint256 constant OWNER_RESET_TO_BENE = 7190445;
+  uint256 constant OWNER_RESET_TO_LAYER2 = 7190445;
+  uint256 constant OWNER_RESET_TO_LAYER3 = 7190445;
 
   // Custom error type
   error UnexpectedRequestID(bytes32 requestId);
@@ -185,7 +184,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
       authHeader,
       "';",
       "const emailData = { Messages: ",
-      "[ { From: {Email: 'app@10102.io', Name: '10102 Platform',},",
+      "[ { From: {Email: 'thao.nguyen3@sotatek.com', Name: '10102 Platform',},",
       "To: [ {Email: '",
       to,
       "', Name:'',},],",
