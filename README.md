@@ -1,40 +1,7 @@
 # Digital Inheritance SC
 
 
-This repository contains the smart contracts for the project **Digital Inheritance**, implemented in **Solidity** and managed with **Hardhat**.  
-It includes source code, deployment scripts, and tests.
-
-## 🚀 Getting Started
-
-### 1. Clone the repo
-```bash
-git clone <repo-url>
-cd <repo-name>
-```
-
-## 2. Install dependencies
-```bash
-npm install
-# or
-yarn install
-```
-
-## 3. Compile contracts
-```bash
-npx hardhat compile
-```
-
-## 4. Run unit tests
-``` bash
-npx hardhat test
-```
-
-
-## 5. Deployment
-Update the hardhat.config.ts with your network settings (e.g., Testnet, Mainnet).
-``` bash
-npx hardhat deploy --network <network-name> --tags <tag-name>
-```
+This repository contains the smart contracts for the project **Digital Inheritance** by [10102](https://10102.io/), implemented in **Solidity** and managed with **Hardhat**.  
 
 
 # 🧪 Project Structure
