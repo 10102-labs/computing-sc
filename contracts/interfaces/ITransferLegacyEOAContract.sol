@@ -63,7 +63,7 @@ interface ITransferEOALegacy {
 
   function setDelayLayer23(address sender_, uint256 delayLayer2_, uint256 delayLayer3_) external;
 
-  function setLegacyName(string calldata legacyName_) external;
+  function setLegacyName(string calldata legacyName_, address sender_) external;
 
   function getBeneficiaryLayer(address beneficiary) external view returns (uint8);
 

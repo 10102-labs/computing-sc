@@ -110,15 +110,6 @@ contract TimelockERC721 is Initializable, OwnableUpgradeable, ReentrancyGuardUpg
     return (lock.lockStatus, lock.owner);
   }
 
-  function changeStatus(uint256 id, TimelockHelper.LockStatus newStatus) external nonReentrant {
-    onlyRouter();
-    TimelockInfo storage lock = timelocks[id];
-
-    if (lock.owner == address(0)) return;
-
-    lock.lockStatus = newStatus;
-    emit ChangeStatus(id, newStatus);
-  }
 
   // ───────────── Create ─────────────
   function createTimelock(
@@ -165,6 +156,7 @@ contract TimelockERC721 is Initializable, OwnableUpgradeable, ReentrancyGuardUpg
 
   // ───────────── Soft Unlock ─────────────
   function unlockSoftTimelock(uint256 timelockId, address caller) external nonReentrant {
+    onlyRouter();
     TimelockInfo storage lock = timelocks[timelockId];
     if (lock.owner == address(0)) return;
 

@@ -155,11 +155,11 @@ contract SafeGuard is BaseGuard {
       } else if (v > 30) {
         // If v > 30 then default va (27,28) has been adjusted for eth_sign flow
         // To support eth_sign and similar we adjust v and hash the messageHash with the Ethereum message prefix before applying ecrecover
-        currentOwner = ecrecover(keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", dataHash)), v - 4, r, s);
+        currentOwner = _recover(keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", dataHash)), v - 4, r, s);
       } else {
         // Default is the ecrecover flow with the provided data hash
         // Use ecrecover with the messageHash for EOA signatures
-        currentOwner = ecrecover(dataHash, v, r, s);
+        currentOwner = _recover(dataHash, v, r, s);
       }
       require(currentOwner > lastOwner, "GS026");
       lastOwner = currentOwner;
@@ -193,6 +193,12 @@ contract SafeGuard is BaseGuard {
       v := and(mload(add(signatures, add(signaturePos, 0x41))), 0xff)
     }
   }
+
+  function _recover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
+    // enforce EIP-2 lower s
+    require(uint256(s) <= 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0, "Invalid s value");
+    if (v < 27) v += 27;
+    require(v == 27 || v == 28, "Invalid v");
+    return ecrecover(hash, v, r, s);
+  }
 }
-
-

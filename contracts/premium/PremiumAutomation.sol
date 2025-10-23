@@ -21,7 +21,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
   mapping(address => bool) enableNotify; //fasle if activated / deleted
   uint256 public defaultNotifyAhead; // time to notify before activation if user doesn't set it
   uint256 public keepupId;
-  address public forwarder;
+  address public forwarder; //the only address that can call performUpkeep for each automation contract
 
   event KeepupIdAndForwarderSet(uint256 indexed keepupId, address indexed forwarder);
   
@@ -113,7 +113,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
     return (false, "");
   }
 
-  function performUpkeep(bytes calldata data) external override {
+  function performUpkeep(bytes calldata data) external override onlyForwarder {
     if(!setting.isPremium((user))) return;
     (address legacy, NotifyLib.NotifyType notifyType) = abi.decode(data, (address, NotifyLib.NotifyType));
     //Already sent when contract activated 

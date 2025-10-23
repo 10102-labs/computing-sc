@@ -107,15 +107,6 @@ contract TimelockERC1155 is Initializable, OwnableUpgradeable, ReentrancyGuardUp
     return (lock.lockStatus, lock.owner);
   }
 
-  function changeStatus(uint256 id, TimelockHelper.LockStatus newStatus) external nonReentrant {
-    onlyRouter();
-    TimelockInfo storage lock = timelocks[id];
-    if (lock.owner == address(0)) return;
-
-    lock.lockStatus = newStatus;
-    emit ChangeStatus(id, newStatus);
-  }
-
   // ──────────────── Public Create ────────────────
   function createTimelock(
     uint256 timelockId,
@@ -190,6 +181,7 @@ contract TimelockERC1155 is Initializable, OwnableUpgradeable, ReentrancyGuardUp
 
   // ──────────────── Soft Unlock ────────────────
   function unlockSoftTimelock(uint256 timelockId, address caller) external nonReentrant {
+    onlyRouter();
     TimelockInfo storage lock = timelocks[timelockId];
 
     if (lock.owner == address(0)) return;

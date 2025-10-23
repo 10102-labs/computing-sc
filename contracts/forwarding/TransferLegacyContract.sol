@@ -94,7 +94,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
 
   function _swapAdminFee(address token, uint256 amountIn) internal {
     // Approve token for router
-    IERC20(token).approve(uniswapRouter, amountIn);
+    IERC20(token).forceApprove(uniswapRouter, amountIn);
 
     address[] memory path = new address[](2);
     path[0] = token;
@@ -109,7 +109,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
         block.timestamp + 300
       )
     {} catch {
-      IERC20(token).transfer(paymentContract, amountIn);
+      IERC20(token).safeTransfer(paymentContract, amountIn);
     }
   }
 
@@ -566,8 +566,10 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
         symbol = IERC20Metadata(token).symbol();
         summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmountErc20, listAssetName: symbol});
         if (fee > 0) {
+          uint256 balanceBefore = IERC20(token).balanceOf(address(this));
           _transferErc20ToBeneficiary(token, safeAddress, address(this), fee);
-          _swapAdminFee(token, fee);
+          uint256 actualFeeReceived =  IERC20(token).balanceOf(address(this)) - balanceBefore;
+          _swapAdminFee(token, actualFeeReceived);
         }
 
         for (uint256 j = 0; j < beneficiaries.length; ) {
@@ -590,7 +592,12 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
       }
     }
     // send email
-    IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(summary, receipt, remaining);
+    try 
+    IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(summary, receipt, remaining) 
+    {} catch {
+      emit EmailActivatedNotCompleted(address(this));
+    }
+  
   }
   /**
    * @dev transfer erc20 token to beneficiaries

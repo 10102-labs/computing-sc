@@ -63,11 +63,16 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
   event MultisigLegacyActivationTriggerUpdated(uint256 legacyId, uint256 lackOfOutgoingTxRange, uint256 timestamp);
   event MultisigLegacyNameNoteUpdated(uint256 legacyId, string name, string note, uint256 timestamp);
   event MultisigLegacyActivated(uint256 legacyId, address[] newSigners, uint256 newThreshold, bool success, uint256 timestamp);
+  event EmailActivatedNotCompleted(address legacyAddress);
 
   /* Modifier */
   modifier onlySafeWallet(uint256 legacyId_) {
     _checkSafeWalletValid(legacyId_, msg.sender);
     _;
+  }
+
+  constructor () {
+    _disableInitializers();
   }
 
   function initialize(address _deployerContract, address _premiumSetting, address _verifier) public initializer {
@@ -275,15 +280,18 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     address legacyAddress = _checkLegacyExisted(legacyId_);
     address guardAddress = _checkGuardExisted(legacyId_);
 
-    //trigger reminder
-    IPremiumSetting(premiumSetting).triggerActivationMultisig(legacyAddress);
 
     //Active legacy
     (address[] memory newSigners, uint256 newThreshold) = IMultisigLegacy(legacyAddress).activeLegacy(guardAddress);
 
     emit MultisigLegacyActivated(legacyId_, newSigners, newThreshold, true, block.timestamp);
     
- 
+    //trigger reminder
+    try 
+    IPremiumSetting(premiumSetting).triggerActivationMultisig(legacyAddress) 
+    {} catch {
+      emit EmailActivatedNotCompleted(legacyAddress);
+    }
   }
 
 }

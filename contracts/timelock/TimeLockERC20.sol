@@ -5,10 +5,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {TimelockHelper} from "./TimelockHelper.sol";
 
 contract TimelockERC20 is Initializable, ReentrancyGuardUpgradeable, OwnableUpgradeable {
+  using SafeERC20 for IERC20;
+
   // ───────────── Constants ─────────────
   address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
@@ -74,15 +77,6 @@ contract TimelockERC20 is Initializable, ReentrancyGuardUpgradeable, OwnableUpgr
     return (lock.lockStatus, lock.owner);
   }
 
-  function changeStatus(uint256 id, TimelockHelper.LockStatus newStatus) external nonReentrant {
-    onlyRouter();
-    TimelockInfo storage lock = timelocks[id];
-
-    if (lock.owner == address(0)) return;
-
-    lock.lockStatus = newStatus;
-    emit ChangeStatus(id, newStatus);
-  }
 
   // ───────────── Create ─────────────
   function createTimelock(
@@ -161,6 +155,7 @@ contract TimelockERC20 is Initializable, ReentrancyGuardUpgradeable, OwnableUpgr
 
   // ───────────── Soft Unlock ─────────────
   function unlockSoftTimelock(uint256 id, address caller) external nonReentrant {
+    onlyRouter();
     TimelockInfo storage lock = timelocks[id];
     if (lock.owner == address(0)) return;
     if (lock.lockStatus != TimelockHelper.LockStatus.Live) revert TimelockHelper.TimelockNotLive();
@@ -201,7 +196,7 @@ contract TimelockERC20 is Initializable, ReentrancyGuardUpgradeable, OwnableUpgr
         (bool success, ) = lock.recipient.call{value: amounts[i]}("");
         if (!success) revert TimelockHelper.NativeTokenTransferFailed();
       } else {
-        IERC20(tokens[i]).transfer(lock.recipient, amounts[i]);
+        IERC20(tokens[i]).safeTransfer(lock.recipient, amounts[i]);
       }
     }
 
