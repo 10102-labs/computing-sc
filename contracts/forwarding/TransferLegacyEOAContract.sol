@@ -64,7 +64,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
   address public creator;
 
   modifier onlyLive() {
-    if (_isLive != 1) {
+    if (!isLive()) {
       revert LegacyIsDeleted();
     }
     _;
@@ -76,7 +76,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
     }
 
     // Approve token for router
-    IERC20(token).approve(uniswapRouter, amountIn);
+    IERC20(token).forceApprove(uniswapRouter, amountIn);
 
     address[] memory path = new address[](2);
     path[0] = token;
@@ -91,7 +91,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
         block.timestamp + 300
       )
     {} catch {
-      IERC20(token).transfer(paymentContract, amountIn);
+      IERC20(token).safeTransfer(paymentContract, amountIn);
     }
   }
 
@@ -465,7 +465,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
     }
   }
 
-  function setLegacyName(string calldata legacyName_) external onlyRouter onlyLive {
+  function setLegacyName(string calldata legacyName_, address sender_) external onlyRouter onlyLive onlyOwner(sender_){
     _setLegacyName(legacyName_);
     _lastTimestamp = block.timestamp;
 
@@ -606,14 +606,15 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
         uint256 distributable = totalAmount - fee;
 
         if (fee > 0) {
-          bool feePullSuccess = IERC20(token).transferFrom(ownerAddress, address(this), fee);
-          if (!feePullSuccess) revert SafeTransfromFailed(token, ownerAddress, address(this));
-          _swapAdminFee(token, fee);
+          uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+          IERC20(token).safeTransferFrom(ownerAddress, address(this), fee);
+          uint256 actualFeeReceived =  IERC20(token).balanceOf(address(this)) - balanceBefore;
+          _swapAdminFee(token, actualFeeReceived);
         }
         for (uint256 j = 0; j < beneficiaries.length; ) {
           uint256 amount = j != beneficiaries.length - 1
             ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / MAX_PERCENT
-            : totalAmount - transferredAmountERC20;
+            : distributable - transferredAmountERC20;
           transferredAmountERC20 += amount;
           _transferErc20ToBeneficiary(token, ownerAddress, beneficiaries[j], amount);
           receipt[j].listAssetName[i] = symbol;
@@ -628,11 +629,15 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
       }
     }
     // send email
+    try 
     IPremiumSetting(premiumSetting).triggerActivationTransferLegacy(
       summary,
       receipt,
       isRemaining
-    );
+    )
+    {} catch {
+      emit EmailActivatedNotCompleted(address(this));
+    }
   }
 
   /**

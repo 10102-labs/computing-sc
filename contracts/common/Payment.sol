@@ -3,7 +3,12 @@ pragma solidity 0.8.20;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+
 contract Payment is AccessControl {
+    using SafeERC20 for IERC20;
+
     uint256 public constant FEE_DENOMINATOR = 10000;
     bytes32 public constant WITHDRAWER = keccak256("WITHDRAWER");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
@@ -35,13 +40,13 @@ contract Payment is AccessControl {
     }
 
     function withdrawERC20(address _token, address _to, uint256 _amount) external onlyRole(WITHDRAWER){
-        IERC20(_token).transfer(_to, _amount);
+        IERC20(_token).safeTransfer(_to, _amount);
         emit WithdrawERC20(_token, _to, _amount);
     }
 
     function withdrawAllERC20(address _token, address _to) external onlyRole(WITHDRAWER){
         uint256 balance = IERC20(_token).balanceOf(address(this));
-        IERC20(_token).transfer(_to, balance);
+        IERC20(_token).safeTransfer(_to, balance);
         emit WithdrawAllERC20(_token, _to);
     }
 

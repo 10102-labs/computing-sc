@@ -108,6 +108,11 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
       v := byte(0, mload(add(signature, 0x60)))
     }
 
+    // Validate s is in lower half of secp256k1 curve order (EIP-2)
+    if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
+      revert InvalidSignature();
+    }
+
     if (v < 27) v += 27;
     if (v != 27 && v != 28) {
       revert InvalidV();

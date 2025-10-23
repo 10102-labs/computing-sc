@@ -12,12 +12,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {Enum} from "@safe-global/safe-smart-account/contracts/common/Enum.sol";
 
 import {TimelockHelper} from "./TimelockHelper.sol";
 
 contract TimeLockRouter is OwnableUpgradeable {
+  using SafeERC20 for IERC20;
+
   struct TimelockERC20InputData {
     address tokenAddress;
     uint256 amount;
@@ -168,43 +170,6 @@ contract TimeLockRouter is OwnableUpgradeable {
     }
   }
 
-  function createSoftTimelockWithSafe(TimelockSoft calldata timelockSoft, address safeAddress) external payable {
-    if (timelockSoft.bufferTime == 0) revert TimelockHelper.ZeroBufferTime();
-
-    timelockCounter++;
-
-    if (timelockSoft.timelockERC20.length > 0) {
-      _handleTimelockSoftERC20(
-        timelockCounter,
-        timelockSoft.timelockERC20,
-        timelockSoft.bufferTime,
-        timelockSoft.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-    if (timelockSoft.timelockERC721.length > 0) {
-      _handleTimelockSoftERC721(
-        timelockCounter,
-        timelockSoft.timelockERC721,
-        timelockSoft.bufferTime,
-        timelockSoft.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-
-    if (timelockSoft.timelockERC1155.length > 0) {
-      _handleTimelockSoftERC1155(
-        timelockCounter,
-        timelockSoft.timelockERC1155,
-        timelockSoft.bufferTime,
-        timelockSoft.name,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-  }
 
   function createTimelockedGift(TimelockGift calldata timelockGift) external payable {
     if (timelockGift.duration == 0) revert TimelockHelper.ZeroDuration();
@@ -250,50 +215,6 @@ contract TimeLockRouter is OwnableUpgradeable {
     }
   }
 
-  function createTimelockedGiftWithSafe(TimelockGift calldata timelockGift, address safeAddress) external payable {
-    if (timelockGift.duration == 0) revert TimelockHelper.ZeroDuration();
-    if (timelockGift.recipient == address(0)) revert TimelockHelper.InvalidRecipient();
-
-    timelockCounter++;
-
-    if (timelockGift.timelockERC20.length > 0) {
-      _handleTimelockGiftERC20(
-        timelockCounter,
-        timelockGift.timelockERC20,
-        timelockGift.duration,
-        timelockGift.recipient,
-        timelockGift.name,
-        timelockGift.giftName,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-    if (timelockGift.timelockERC721.length > 0) {
-      _handleTimelockGiftERC721(
-        timelockCounter,
-        timelockGift.timelockERC721,
-        timelockGift.duration,
-        timelockGift.recipient,
-        timelockGift.name,
-        timelockGift.giftName,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-    if (timelockGift.timelockERC1155.length > 0) {
-      _handleTimelockGiftERC1155(
-        timelockCounter,
-        timelockGift.timelockERC1155,
-        timelockGift.duration,
-        timelockGift.recipient,
-        timelockGift.name,
-        timelockGift.giftName,
-        safeAddress,
-        TimelockHelper.LockStatus.Created
-      );
-    }
-  }
-
   function unlockSoftTimelock(uint256 id) external {
     timelockERC20Contract.unlockSoftTimelock(id, msg.sender);
     timelockERC721Contract.unlockSoftTimelock(id, msg.sender);
@@ -330,10 +251,8 @@ contract TimeLockRouter is OwnableUpgradeable {
   ) private {
     (address[] memory tokens, uint256[] memory amounts) = _makeListERC20(timelockERC20);
     uint256 requiredNativeAmount = _validateERC20Input(tokens, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
-    }
-    timelockERC20Contract.createTimelock{value: msg.value}(timelockId, tokens, amounts, duration, name, owner, lockStatus);
+     uint256[] memory actualReceived=  _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
+    timelockERC20Contract.createTimelock{value: msg.value}(timelockId, tokens, actualReceived, duration, name, owner, lockStatus);
   }
 
   function _handleTimelockSoftERC20(
@@ -346,10 +265,8 @@ contract TimeLockRouter is OwnableUpgradeable {
   ) private {
     (address[] memory tokens, uint256[] memory amounts) = _makeListERC20(timelockERC20);
     uint256 requiredNativeAmount = _validateERC20Input(tokens, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
-    }
-    timelockERC20Contract.createSoftTimelock{value: msg.value}(timelockId, tokens, amounts, bufferTime, name, owner, lockStatus);
+    uint256[] memory actualReceived =  _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
+    timelockERC20Contract.createSoftTimelock{value: msg.value}(timelockId, tokens, actualReceived, bufferTime, name, owner, lockStatus);
   }
 
   function _handleTimelockGiftERC20(
@@ -364,21 +281,23 @@ contract TimeLockRouter is OwnableUpgradeable {
   ) private {
     (address[] memory tokens, uint256[] memory amounts) = _makeListERC20(timelockERC20);
     uint256 requiredNativeAmount = _validateERC20Input(tokens, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
-    }
-
-    timelockERC20Contract.createTimelockedGift{value: msg.value}(timelockId, tokens, amounts, duration, recipient, name, giftName, owner, lockStatus);
+    uint256[] memory actualReceived = _transferERC20TokensIn(tokens, amounts, requiredNativeAmount);
+    timelockERC20Contract.createTimelockedGift{value: msg.value}(timelockId, tokens, actualReceived, duration, recipient, name, giftName, owner, lockStatus);
   }
 
-  function _transferERC20TokensIn(address[] memory tokens, uint256[] memory amounts, uint256 requiredNativeAmount) private {
+  function _transferERC20TokensIn(address[] memory tokens, uint256[] memory amounts, uint256 requiredNativeAmount) private returns(uint256[] memory actualReceived){
     if (requiredNativeAmount != msg.value) {
       revert TimelockHelper.InsufficientNativeToken();
     }
 
+    actualReceived = new uint256[](tokens.length);
+
     for (uint256 i = 0; i < tokens.length; i++) {
       if (tokens[i] != NATIVE_TOKEN) {
-        IERC20(tokens[i]).transferFrom(msg.sender, address(timelockERC20Contract), amounts[i]);
+        uint256 balanceBefore = IERC20(tokens[i]).balanceOf(address(timelockERC20Contract));
+        IERC20(tokens[i]).safeTransferFrom(msg.sender, address(timelockERC20Contract), amounts[i]);
+        uint256 balanceAfter = IERC20(tokens[i]).balanceOf(address(timelockERC20Contract));
+        actualReceived[i] = balanceAfter - balanceBefore;
       }
     }
   }
@@ -425,9 +344,7 @@ contract TimeLockRouter is OwnableUpgradeable {
   ) private {
     (address[] memory tokens, uint256[] memory ids) = _makeListERC721(timelockERC721);
     _validateERC721Input(tokens, ids);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC721TokensIn(tokens, ids);
-    }
+    _transferERC721TokensIn(tokens, ids);
     timelockERC721Contract.createTimelock(timelockId, tokens, ids, duration, name, owner, lockStatus);
   }
 
@@ -442,9 +359,8 @@ contract TimeLockRouter is OwnableUpgradeable {
     (address[] memory tokens, uint256[] memory ids) = _makeListERC721(timelockERC721);
 
     _validateERC721Input(tokens, ids);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC721TokensIn(tokens, ids);
-    }
+    _transferERC721TokensIn(tokens, ids);
+    
     timelockERC721Contract.createSoftTimelock(timelockId, tokens, ids, bufferTime, name, owner, lockStatus);
   }
 
@@ -461,9 +377,7 @@ contract TimeLockRouter is OwnableUpgradeable {
     (address[] memory tokens, uint256[] memory ids) = _makeListERC721(timelockERC721);
 
     _validateERC721Input(tokens, ids);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC721TokensIn(tokens, ids);
-    }
+    _transferERC721TokensIn(tokens, ids);
 
     timelockERC721Contract.createTimelockedGift(timelockId, tokens, ids, duration, recipient, name, giftName, owner, lockStatus);
   }
@@ -514,9 +428,7 @@ contract TimeLockRouter is OwnableUpgradeable {
     (address[] memory tokens, uint256[] memory ids, uint256[] memory amounts) = _makeListERC1155(timelockERC1155);
 
     _validateERC1155Input(tokens, ids, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC1155TokensIn(tokens, ids, amounts);
-    }
+    _transferERC1155TokensIn(tokens, ids, amounts);
     timelockERC1155Contract.createTimelock(timelockId, tokens, ids, amounts, duration, name, owner, lockStatus);
   }
 
@@ -537,9 +449,7 @@ contract TimeLockRouter is OwnableUpgradeable {
     }
 
     _validateERC1155Input(tokens, ids, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC1155TokensIn(tokens, ids, amounts);
-    }
+    _transferERC1155TokensIn(tokens, ids, amounts);
     timelockERC1155Contract.createSoftTimelock(timelockId, tokens, ids, amounts, bufferTime, name, owner, lockStatus);
   }
 
@@ -556,9 +466,7 @@ contract TimeLockRouter is OwnableUpgradeable {
     (address[] memory tokens, uint256[] memory ids, uint256[] memory amounts) = _makeListERC1155(timelockERC1155);
 
     _validateERC1155Input(tokens, ids, amounts);
-    if (lockStatus == TimelockHelper.LockStatus.Live) {
-      _transferERC1155TokensIn(tokens, ids, amounts);
-    }
+    _transferERC1155TokensIn(tokens, ids, amounts);
 
     timelockERC1155Contract.createTimelockedGift(timelockId, tokens, ids, amounts, duration, recipient, name, giftName, owner, lockStatus);
   }

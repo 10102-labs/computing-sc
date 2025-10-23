@@ -70,6 +70,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
     uint256 timestamp
   );
   event TransferEOALegacyLayer23Created(uint256 legacyId, uint8 layer, TransferLegacyStruct.Distribution distribution, string nickName);
+  event EmailOwnerResetNotCompleted(address legacyAddress);
 
   function initialize(
     address _deployerContract,
@@ -153,7 +154,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
       delayLayer3: ITransferEOALegacy(legacyAddress).delayLayer3()
     });
 
-    ITransferEOALegacy(legacyAddress).setLegacyName(mainConfig_.name);
+    ITransferEOALegacy(legacyAddress).setLegacyName(mainConfig_.name, msg.sender);
 
     emit TransferEOALegacyCreated(newLegacyId, legacyAddress, msg.sender, mainConfig_, _legacyExtraConfig, block.timestamp);
 
@@ -177,7 +178,12 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
 
   function avtiveAlive(uint256 legacyId_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
-    IPremiumSetting(premiumSetting).triggerOwnerResetReminder(legacyAddress);
+
+    try 
+    IPremiumSetting(premiumSetting).triggerOwnerResetReminder(legacyAddress) 
+    {} catch {
+      emit EmailOwnerResetNotCompleted(legacyAddress);
+    }
     ITransferEOALegacy(legacyAddress).activeAlive(msg.sender);
     emit TransferEOALegacyActivedAlive(legacyId_, block.timestamp);
   }
@@ -227,7 +233,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
       emit TransferEOALegacyLayer23DistributionUpdated(legacyId_, 3, nickName3, layer3Distribution_, block.timestamp);
     }
 
-    ITransferEOALegacy(legacyAddress).setLegacyName(mainConfig_.name);
+    ITransferEOALegacy(legacyAddress).setLegacyName(mainConfig_.name, msg.sender);
 
     // Emit final config update
     TransferLegacyStruct.LegacyExtraConfig memory _legacyExtraConfig = TransferLegacyStruct.LegacyExtraConfig({
@@ -283,7 +289,7 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
 
   function setNameNote(uint256 legacyId_, string calldata name_, string calldata note_) external {
     address legacyAddress = _checkLegacyExisted(legacyId_);
-    ITransferEOALegacy(legacyAddress).setLegacyName(name_);
+    ITransferEOALegacy(legacyAddress).setLegacyName(name_, msg.sender);
     emit TransferEOALegacyNameNoteUpdated(legacyId_, name_, note_, block.timestamp);
   }
 

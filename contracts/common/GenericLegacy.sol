@@ -3,6 +3,9 @@
 pragma solidity 0.8.20;
 
 contract GenericLegacy {
+
+  event EmailActivatedNotCompleted(address legacyAddress);
+
   /* Error */
   error OnlyRouter();
   error OnlyOwner();
