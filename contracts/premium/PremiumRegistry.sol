@@ -52,6 +52,10 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     _;
   }
 
+  constructor () {
+    _disableInitializers();
+  }
+
   function initialize(
     address _usdt,
     address _usdc,

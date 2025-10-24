@@ -66,6 +66,10 @@ contract PremiumAutomationManager is OwnableUpgradeable {
     _;
   }
 
+  constructor () {
+    _disableInitializers();
+  }
+
   function initialize() public initializer {
     __Ownable_init(msg.sender);
   }

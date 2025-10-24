@@ -76,6 +76,10 @@ contract TransferLegacyRouter is LegacyRouter, LegacyFactory, Initializable {
     _;
   }
 
+    constructor () {
+    _disableInitializers();
+  }
+
   function initialize(address _deployerContract, address _premiumSetting, address _verifier, address _paymentContract, address router_, address weth_) external initializer {
     legacyDeployerContract = _deployerContract;
     premiumSetting = _premiumSetting;
