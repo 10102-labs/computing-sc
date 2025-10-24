@@ -84,8 +84,6 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     payment = _payment;
   }
 
-
-
   /*ADMIN FUNCTION */
   function createPlans(
     uint256[] calldata durations,
@@ -95,16 +93,18 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     string[] calldata features
   ) external onlyRole(OPERATOR) {
     require(
-      prices.length == durations.length 
-      && durations.length == names.length 
-      && names.length == descriptions.length
-      && descriptions.length == features.length, "Length mismatch");
+      prices.length == durations.length &&
+        durations.length == names.length &&
+        names.length == descriptions.length &&
+        descriptions.length == features.length,
+      "Length mismatch"
+    );
 
     for (uint256 i = 0; i < prices.length; i++) {
       require(prices[i] > 0, "Price must be > 0");
       require(durations[i] > 0, "Duration must be > 0");
       premiumPlans.push(PremiumPlan(prices[i], durations[i], true));
-      emit PlanUpdated(premiumPlans.length-1, prices[i], durations[i], names[i], descriptions[i], features[i]);
+      emit PlanUpdated(premiumPlans.length - 1, prices[i], durations[i], names[i], descriptions[i], features[i]);
     }
   }
 
@@ -114,14 +114,16 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     uint256[] calldata prices,
     string[] calldata names,
     string[] calldata descriptions,
-    string[] calldata features 
+    string[] calldata features
   ) external onlyRole(OPERATOR) {
-    require( 
-      plans.length == prices.length 
-      &&prices.length == durations.length 
-      && durations.length == names.length 
-      && names.length == descriptions.length
-      && descriptions.length == features.length, "Length mismatch");
+    require(
+      plans.length == prices.length &&
+        prices.length == durations.length &&
+        durations.length == names.length &&
+        names.length == descriptions.length &&
+        descriptions.length == features.length,
+      "Length mismatch"
+    );
     for (uint256 i = 0; i < prices.length; i++) {
       _updatePlan(plans[i], durations[i], prices[i]);
       emit PlanUpdated(plans[i], prices[i], durations[i], names[i], descriptions[i], features[i]);
@@ -129,21 +131,19 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
   }
 
   function updatePlansPriceAndDuration(
-      uint256[] calldata plans,
-      uint256[] calldata durations,
-      uint256[] calldata prices
+    uint256[] calldata plans,
+    uint256[] calldata durations,
+    uint256[] calldata prices
   ) external onlyRole(OPERATOR) {
-    require(  plans.length == prices.length 
-      &&prices.length == durations.length, "Length mismatch");
-    for(uint i = 0 ; i < plans.length; i++) {
-        _updatePlan(plans[i], durations[i], prices[i]);
-        emit PlanPriceDurationUpdated(plans[i], prices[i], durations[i]);
-    } 
+    require(plans.length == prices.length && prices.length == durations.length, "Length mismatch");
+    for (uint i = 0; i < plans.length; i++) {
+      _updatePlan(plans[i], durations[i], prices[i]);
+      emit PlanPriceDurationUpdated(plans[i], prices[i], durations[i]);
+    }
   }
 
-
   function removePlans(uint256[] calldata plans) external onlyRole(OPERATOR) {
-    for(uint256 i = 0 ; i < plans.length ; i++) {
+    for (uint256 i = 0; i < plans.length; i++) {
       _removePlan(plans[i]);
     }
   }
@@ -151,7 +151,7 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
   ///@notice dev only - to set an account premium
   function subrcribeByAdmin(address user, uint256 plan, string memory method) external onlyRole(OPERATOR) {
     premiumSetting.updatePremiumTime(user, getPlanDuration(plan));
-    emit PlanSubcribed(user, plan, method, 0); 
+    emit PlanSubcribed(user, plan, method, 0);
   }
 
   /* USER FUNCTIONS */
@@ -201,7 +201,7 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
   }
 
   /*INTERNAL FUNCTIONS*/
-  function _updatePlan(uint256 plan,  uint256 duration, uint256 price) internal requireActive(plan) {
+  function _updatePlan(uint256 plan, uint256 duration, uint256 price) internal requireActive(plan) {
     require(price > 0, "Price must be > 0");
     require(duration > 0, "Duration must be > 0");
     require(plan < premiumPlans.length, "Invalid plan");
@@ -225,7 +225,7 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
     return premiumPlans[plan].usdPrice;
   }
 
-  ///@dev priceUSD * 10**8 to match Chainlink FeedPrice decimals, 
+  ///@dev priceUSD * 10**8 to match Chainlink FeedPrice decimals,
   // and then divided by 100 (two digits after the decimal point)
   function getPlanPriceUSDT(uint256 plan) public view requirePrice(plan) requireActive(plan) returns (uint256) {
     return (getPlanPriceUSD(plan) * 10 ** 6 * (10 ** 6)) / getUSDTPrice();
@@ -244,24 +244,32 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
   }
 
   function getUSDCPrice() public view returns (uint256) {
-    (, int256 answer, , , ) = usdcUsdPriceFeed.latestRoundData();
-    require(answer > 0, "Invalid price");
+    (, int256 answer, , uint256 updatedAt, ) = usdcUsdPriceFeed.latestRoundData();
+    _validateRoundData(answer, updatedAt);
     return uint256(answer);
   }
 
   function getUSDTPrice() public view returns (uint256) {
-    (, int256 answer, , , ) = usdtUsdPriceFeed.latestRoundData();
-    require(answer > 0, "Invalid price");
+    (, int256 answer, , uint256 updatedAt, ) = usdtUsdPriceFeed.latestRoundData();
+    _validateRoundData(answer, updatedAt);
+
     return uint256(answer);
   }
 
   function getETHPrice() public view returns (uint256) {
-    (, int256 answer, , , ) = ethUsdPriceFeed.latestRoundData();
-    require(answer > 0, "Invalid price");
+    (, int256 answer, , uint256 updatedAt, ) = ethUsdPriceFeed.latestRoundData();
+    _validateRoundData(answer, updatedAt);
+
     return uint256(answer);
   }
 
   function getNextPlanId() public view returns (uint256) {
     return premiumPlans.length;
+  }
+
+  function _validateRoundData(int256 answer, uint256 updatedAt) internal view {
+    require(answer > 0, "Invalid price");
+    require(updatedAt > 0, "Round not complete");
+    require(block.timestamp - updatedAt <= 3600, "Price data is stale");
   }
 }
