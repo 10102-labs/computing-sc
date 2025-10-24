@@ -51,13 +51,15 @@ contract Payment is AccessControl {
     }
 
     function withdrawETH(address _to, uint256 _amount) external onlyRole(WITHDRAWER){
-        payable(_to).transfer(_amount);
+        (bool success, ) = payable(_to).call{value: _amount}("");
+        require(success, "ETH transfer failed");
         emit WithdrawETH(_to, _amount);
     }
 
     function withdrawAllETH(address _to) external onlyRole(WITHDRAWER){
         uint256 balance = address(this).balance;
-        payable(_to).transfer(balance);
+        (bool success, ) = payable(_to).call{value: balance}("");
+        require(success, "ETH transfer failed");
         emit WithdrawAllETH(_to);
     }
 
