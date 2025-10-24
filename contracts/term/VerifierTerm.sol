@@ -33,6 +33,10 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
   uint256 private constant MAX_PAST_OFFSET = 10 minutes;
   uint256 private constant MAX_FUTURE_OFFSET = 5 minutes;
 
+  constructor () {
+    _disableInitializers();
+  }
+
   function initialize(address initialOwner) public initializer {
     __ReentrancyGuard_init();
     __Ownable_init(initialOwner);

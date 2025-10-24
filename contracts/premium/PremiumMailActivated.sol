@@ -71,6 +71,10 @@ contract PremiumMailActivated is OwnableUpgradeable {
     _;
   }
 
+  constructor () {
+    _disableInitializers();
+  }
+
   function initialize(address _router, uint64 _subscriptionId, bytes32 _donId, uint32 _gasLimit, address _sendMailRouter) public initializer {
     router = _router;
     subscriptionId = _subscriptionId;

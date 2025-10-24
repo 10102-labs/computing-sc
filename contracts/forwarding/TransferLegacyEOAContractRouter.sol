@@ -72,6 +72,10 @@ contract TransferEOALegacyRouter is LegacyRouter, EOALegacyFactory, Initializabl
   event TransferEOALegacyLayer23Created(uint256 legacyId, uint8 layer, TransferLegacyStruct.Distribution distribution, string nickName);
   event EmailOwnerResetNotCompleted(address legacyAddress);
 
+    constructor () {
+    _disableInitializers();
+  }
+
   function initialize(
     address _deployerContract,
     address _premiumSetting,
