@@ -86,6 +86,10 @@ contract TimeLockRouter is OwnableUpgradeable {
 
   function createTimelock(TimelockRegular calldata timelockRegular) external payable {
     if (timelockRegular.duration == 0) revert TimelockHelper.ZeroDuration();
+    
+    if (timelockRegular.timelockERC20.length == 0 && msg.value > 0) {
+      revert("ETH not accepted for non-ERC20 timelocks");
+    }
 
     timelockCounter++;
 
@@ -133,7 +137,12 @@ contract TimeLockRouter is OwnableUpgradeable {
   }
 
   function createSoftTimelock(TimelockSoft calldata timelockSoft) external payable {
+    
     if (timelockSoft.bufferTime == 0) revert TimelockHelper.ZeroBufferTime();
+        
+    if (timelockSoft.timelockERC20.length == 0 && msg.value > 0) {
+      revert("ETH not accepted for non-ERC20 timelocks");
+    }
 
     timelockCounter++;
 
@@ -174,6 +183,11 @@ contract TimeLockRouter is OwnableUpgradeable {
   function createTimelockedGift(TimelockGift calldata timelockGift) external payable {
     if (timelockGift.duration == 0) revert TimelockHelper.ZeroDuration();
     if (timelockGift.recipient == address(0)) revert TimelockHelper.InvalidRecipient();
+    
+    if (timelockGift.timelockERC20.length == 0 && msg.value > 0) {
+      revert("ETH not accepted for non-ERC20 timelocks");
+    }
+
 
     timelockCounter++;
 
