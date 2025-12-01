@@ -47,14 +47,15 @@ contract PremiumMailActivated is OwnableUpgradeable {
   uint32 public gasLimit = 300000;
 
   // email invoke name
-  uint256 constant ACTIVATED_TO_BENE= 7179581;
-  uint256 constant ACTIVATED_TO_BENE_WITH_REMAINING = 7179575;
-  uint256 constant ACTIVATED_MULTISIG = 7180065;
-  uint256 constant CONTRACT_ACTIVATED_TO_OWNER = 7196254;
+  uint256 constant ACTIVATED_TO_BENE = 7217007;
+  uint256 constant ACTIVATED_TO_BENE_WITH_REMAINING = 7217008;
+  uint256 constant ACTIVATED_MULTISIG = 7217009;
+  uint256 constant CONTRACT_ACTIVATED_TO_OWNER =  7217010;
 
-  uint256 constant OWNER_RESET_TO_BENE = 7190445;
-  uint256 constant OWNER_RESET_TO_LAYER2 = 7190445;
-  uint256 constant OWNER_RESET_TO_LAYER3 = 7190445;
+  uint256 constant OWNER_RESET_TO_BENE = 7217011;
+  uint256 constant OWNER_RESET_TO_LAYER2 = 7217011;
+  uint256 constant OWNER_RESET_TO_LAYER3 = 7217011;
+  uint256 constant ACTIVATED_MULTISIG_TO_OWNER = 7423000;
 
   // Custom error type
   error UnexpectedRequestID(bytes32 requestId);
@@ -170,6 +171,20 @@ contract PremiumMailActivated is OwnableUpgradeable {
     }
   }
 
+  function sendActivatedMutisigToOwner(
+    string memory ownerEmail,
+    string memory contractName,
+    address contractAddress,
+    address activatedBy,
+    address safeAddress,
+    string[] memory beneNames,
+    address[] memory beneAddresses
+  ) external onlyRouter {
+    _sendActivatedMutisigToOwner(ownerEmail, contractName, contractAddress, activatedBy, safeAddress, beneNames, beneAddresses);
+    _emitSendMail(ownerEmail, NotifyLib.NotifyType.ContractActivated);
+
+  }
+
   //Onwer Reset
   function sendMailOwnerResetToBene(string[] memory beneNames, string[] memory beneEmails, string memory contractName) external onlyRouter {
     for (uint256 i = 0; i < beneNames.length; i++) {
@@ -188,7 +203,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
       authHeader,
       "';",
       "const emailData = { Messages: ",
-      "[ { From: {Email: 'thao.nguyen3@sotatek.com', Name: '10102 Platform',},",
+      "[ { From: {Email: 'app@10102.io', Name: '10102 Platform',},",
       "To: [ {Email: '",
       to,
       "', Name:'',},],",
@@ -251,7 +266,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
     }
     listAsset = string.concat(listAsset, "]");
 
-    string memory subject = string.concat("[", contractName, "] Activated - You have Received Your Inheritance");
+    string memory subject = string.concat("", contractName, " Activated - You have Received Your Inheritance");
 
     string memory params = string.concat(
       " bene_name: '",
@@ -279,7 +294,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
     string[] memory listAssetName,
     address contractAddress
   ) internal returns (bytes32 requestId) {
-    string memory subject = string.concat("[", contractName, "] Activated with Remaining Funds - You have Received Partial Inheritance");
+    string memory subject = string.concat("", contractName, " Activated with Remaining Funds - You have Received Partial Inheritance");
     string memory listAsset = "listAsset: [";
     for (uint256 i = 0; i < listToken.length; i++) {
       address tokenAddr = listToken[i];
@@ -319,6 +334,50 @@ contract PremiumMailActivated is OwnableUpgradeable {
     return _sendRequest(source);
   }
 
+  function _sendActivatedMutisigToOwner(
+    string memory ownerEmail,
+    string memory contractName,
+    address contractAddress,
+    address activatedBy,
+    address safeAddress,
+    string[] memory beneNames,
+    address[] memory beneAddresses
+  ) internal  returns (bytes32 requestId) {
+    string memory beneList = "beneficiaries: [";
+    for (uint256 i = 0; i < beneAddresses.length; i++) {
+      beneList = string.concat(beneList, "  { name: '", beneNames[i], "', address: '", Strings.toHexString(beneAddresses[i]), "' }");
+      if (i < beneAddresses.length - 1) {
+        beneList = string.concat(beneList, ",");
+      }
+    }
+    beneList = string.concat(beneList, "]");
+
+    string memory subject = string.concat("", contractName, " Was Activated");
+
+    string memory params = string.concat(
+      "contract_name: '",
+      contractName,
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "', beneficiary_address: '",
+      Strings.toHexString(activatedBy),
+      "',  activation_date: new Date(",
+      Strings.toString(block.timestamp * 1000),
+      "), safe_address: '",
+      Strings.toHexString(safeAddress),
+      "', ",
+      beneList
+    );
+
+    string memory source = string.concat(
+      _sendEmailToAddressBegin(ownerEmail, subject, ACTIVATED_MULTISIG_TO_OWNER),
+      params,
+      _sendEmailToAddressEnd()
+    );
+
+    return _sendRequest(source);
+  }
+
   //** Contract activated */ Same email
   // 1. To owner
   // 2. To layer1
@@ -334,7 +393,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
     address contractAddress,
     bool remaining
   ) internal returns (bytes32 requestId) {
-    uint8 [] memory decimals = new uint8[](_listAsset.length); 
+    uint8[] memory decimals = new uint8[](_listAsset.length);
     string memory listAsset = "listAsset: [";
     for (uint256 i = 0; i < _listAsset.length; i++) {
       address tokenAddr = _listAsset[i].listToken;
@@ -387,7 +446,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
     }
     listBeneReceived = string.concat(listBeneReceived, "]");
 
-    string memory subject = string.concat("[", contractName, "] Was Activated");
+    string memory subject = string.concat("", contractName, " Was Activated");
 
     string memory params = string.concat(
       " bene_addr: '",
@@ -433,7 +492,7 @@ contract PremiumMailActivated is OwnableUpgradeable {
   }
 
   function _sendEmailOwnerResetToBene(string memory beneName, string memory beneEmail, string memory contractName) internal returns (bytes32) {
-    string memory subject = string.concat("The activation timeline of [", contractName, "] has been reset");
+    string memory subject = string.concat("The activation timeline of ", contractName, " has been reset");
     string memory params = string.concat("bene_name: '", beneName, "', contract_name: '", contractName, "'");
     string memory source = string.concat(_sendEmailToAddressBegin(beneEmail, subject, OWNER_RESET_TO_BENE), params, _sendEmailToAddressEnd());
     return _sendRequest(source);

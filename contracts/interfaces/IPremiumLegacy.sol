@@ -41,4 +41,6 @@ interface IPremiumLegacy {
 
   function getBeneficiaryLayer(address beneficiary) external view returns (uint8);
 
+  function getBeneNickname(address beneAddress) external view returns (string memory);
+
 }

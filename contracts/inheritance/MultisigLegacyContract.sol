@@ -9,12 +9,12 @@ import {ISafeWallet} from "../interfaces/ISafeWallet.sol";
 import {MultisigLegacyStruct} from "../libraries/MultisigLegacyStruct.sol";
 import {Enum} from "@safe-global/safe-smart-account/contracts/common/Enum.sol";
 
-
 contract MultisigLegacy is GenericLegacy {
   error BeneficiaryInvalid();
   error NotBeneficiary();
   error NotEnoughContitionalActive();
   error ExecTransactionFromModuleFailed();
+  error LengthMismatch();
 
   using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -24,7 +24,6 @@ contract MultisigLegacy is GenericLegacy {
   EnumerableSet.AddressSet private _beneficiariesSet;
   address public safeGuard;
   address public creator;
-
 
   /* View functions to support premium */
 
@@ -41,7 +40,6 @@ contract MultisigLegacy is GenericLegacy {
     uint256 lastTimestamp = ISafeGuard(safeGuard).getLastTimestampTxs();
     uint256 lackOfOutgoingTxRange = getActivationTrigger();
     uint256 beneficiariesTrigger = lastTimestamp + lackOfOutgoingTxRange;
-  
 
     return (beneficiariesTrigger, beneficiariesTrigger, beneficiariesTrigger);
   }
@@ -53,7 +51,6 @@ contract MultisigLegacy is GenericLegacy {
   function getLastTimestamp() public view override returns (uint256) {
     return ISafeGuard(safeGuard).getLastTimestampTxs();
   }
-
 
   /* View function */
   /**
@@ -93,12 +90,12 @@ contract MultisigLegacy is GenericLegacy {
     address[] calldata beneficiaries_,
     MultisigLegacyStruct.LegacyExtraConfig calldata config_,
     address _safeGuard,
-    address _creator
+    address _creator,
+    string[] calldata nicknames_
   ) external notInitialized returns (uint256 numberOfBeneficiaries) {
     if (owner_ == address(0)) revert OwnerInvalid();
     if (_safeGuard == address(0)) revert OwnerInvalid();
     if (_creator == address(0)) revert OwnerInvalid();
-
 
     //set info legacy
     _setLegacyInfo(legacyId_, owner_, 1, config_.lackOfOutgoingTxRange, msg.sender);
@@ -107,7 +104,7 @@ contract MultisigLegacy is GenericLegacy {
     _setMinRequiredSignatures(config_.minRequiredSignatures);
 
     //set beneficiaries
-    numberOfBeneficiaries = _setBeneficiaries(owner_, beneficiaries_);
+    numberOfBeneficiaries = _setBeneficiaries(owner_, beneficiaries_, nicknames_);
 
     safeGuard = _safeGuard;
     creator = _creator;
@@ -123,8 +120,10 @@ contract MultisigLegacy is GenericLegacy {
   function setLegacyBeneficiaries(
     address sender_,
     address[] calldata beneficiaries_,
-    uint128 minRequiredSigs_
+    uint128 minRequiredSigs_,
+    string[] calldata nicknames_
   ) external onlyRouter onlyOwner(sender_) isActiveLegacy returns (uint256 numberOfBeneficiaries) {
+    if (beneficiaries_.length != nicknames_.length) revert LengthMismatch();
     //clear beneficiaries
     _clearBeneficiaries();
 
@@ -132,7 +131,7 @@ contract MultisigLegacy is GenericLegacy {
     _setMinRequiredSignatures(minRequiredSigs_);
 
     //set beneficiaries
-    numberOfBeneficiaries = _setBeneficiaries(sender_, beneficiaries_);
+    numberOfBeneficiaries = _setBeneficiaries(sender_, beneficiaries_, nicknames_);
   }
 
   /**
@@ -161,10 +160,9 @@ contract MultisigLegacy is GenericLegacy {
     }
   }
 
-  function setLegacyName(string calldata legacyName_) external onlyRouter isActiveLegacy  {
+  function setLegacyName(string calldata legacyName_) external onlyRouter isActiveLegacy {
     _setLegacyName(legacyName_);
   }
-
 
   /* Utils function */
   /**
@@ -186,11 +184,16 @@ contract MultisigLegacy is GenericLegacy {
    * @param owner_  owner legacy
    * @param beneficiaries_  beneficiaries[]
    */
-  function _setBeneficiaries(address owner_, address[] calldata beneficiaries_) private returns (uint256 numberOfBeneficiaries) {
+  function _setBeneficiaries(
+    address owner_,
+    address[] calldata beneficiaries_,
+    string[] calldata nicknames_
+  ) private returns (uint256 numberOfBeneficiaries) {
     address[] memory signers = ISafeWallet(owner_).getOwners();
     for (uint256 i = 0; i < beneficiaries_.length; ) {
       _checkBeneficiaries(signers, owner_, beneficiaries_[i]);
       _beneficiariesSet.add(beneficiaries_[i]);
+      _setBeneNickname(beneficiaries_[i], nicknames_[i]);
       unchecked {
         ++i;
       }
@@ -212,6 +215,7 @@ contract MultisigLegacy is GenericLegacy {
   function _clearBeneficiaries() private {
     uint256 length = _beneficiariesSet.length();
     for (uint256 i = 0; i < length; ) {
+      _deleteBeneName(_beneficiariesSet.at(0));
       _beneficiariesSet.remove(_beneficiariesSet.at(0));
       unchecked {
         ++i;
@@ -249,8 +253,8 @@ contract MultisigLegacy is GenericLegacy {
    * @param owner_  safe wallet address
    * @param beneficiary_ beneficiary address
    */
-  function _checkBeneficiaries(address[] memory signers_, address owner_, address beneficiary_) private view {
-    if (beneficiary_ == address(0) || beneficiary_ == owner_ || _isContract(beneficiary_)) revert BeneficiaryInvalid();
+  function _checkBeneficiaries(address[] memory signers_, address owner_, address beneficiary_) private pure {
+    if (beneficiary_ == address(0) || beneficiary_ == owner_) revert BeneficiaryInvalid();
 
     for (uint256 j = 0; j < signers_.length; ) {
       if (beneficiary_ == signers_[j]) revert BeneficiaryInvalid();
@@ -259,16 +263,4 @@ contract MultisigLegacy is GenericLegacy {
       }
     }
   }
-
-  /**
-   * @dev check whether addr is a smart contract address or eoa address
-   * @param addr  the address need to check
-   */
-  function _isContract(address addr) private view returns (bool) {
-    uint256 size;
-    assembly ("memory-safe") {
-      size := extcodesize(addr)
-    }
-    return size > 0;
-  }
-  }
+}

@@ -213,8 +213,10 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
 
     //add queued legacy to cronjob
     if (address(premiumAutomationManager) != address(0)) {
-      premiumAutomationManager.addLegacyCronjob(user, legacyQueuedToAddCronjob[user]);
-      delete legacyQueuedToAddCronjob[user];
+      if (legacyQueuedToAddCronjob[user].length > 0) {
+        premiumAutomationManager.addLegacyCronjob(user, legacyQueuedToAddCronjob[user]);
+        delete legacyQueuedToAddCronjob[user];
+      } 
     }
   }
 
@@ -296,6 +298,7 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     IPremiumLegacy legacy = IPremiumLegacy(legacyAddress);
 
     address creator = legacy.creator();
+    (, string memory ownerEmail, ) = getUserData(creator);
     address safeWallet = legacy.getLegacyOwner();
     string memory contractName = legacy.getLegacyName();
 
@@ -303,6 +306,13 @@ contract PremiumSetting is OwnableUpgradeable, IPremiumSetting {
     (, string[] memory beneEmails, string[] memory beneNames) = getBeneficiaryData(legacyAddress);
     if (address(premiumSendMail) == address(0)) return;
     premiumSendMail.sendMailActivatedMultisig(beneNames, beneEmails, contractName, safeWallet);
+
+    (address []  memory  beneficiares ,,) = IPremiumLegacy(legacy).getLegacyBeneficiaries();
+    string [] memory names = new string[](beneficiares.length);
+     for (uint256 i = 0; i < beneficiares.length; i++) {
+        names[i] = IPremiumLegacy(legacy).getBeneNickname(beneficiares[i]);
+    }
+    premiumSendMail.sendActivatedMutisigToOwner(ownerEmail, contractName, legacyAddress, tx.origin, safeWallet, names, beneficiares);
   }
 
   function triggerActivationTransferLegacy(

@@ -10,13 +10,15 @@ interface IMultisigLegacy {
     address[] calldata beneficiaries_,
     MultisigLegacyStruct.LegacyExtraConfig calldata config_,
     address _safeGuard,
-    address creator
+    address creator,
+    string[] calldata nicknames_
   ) external returns (uint256 numberOfBeneficiaries);
 
   function setLegacyBeneficiaries(
     address sender_,
     address[] calldata beneficiaries_,
-    uint128 minRequiredSigs_
+    uint128 minRequiredSigs_,
+    string[] calldata nicknames_
   ) external returns (uint256 numberOfBeneficiaries);
 
   function setActivationTrigger(address sender_, uint256 lackOfOutgoingTxRange_) external;

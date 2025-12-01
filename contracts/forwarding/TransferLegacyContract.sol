@@ -40,7 +40,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
   error InvalidGuard();
   /* State variable */
   uint128 public constant LEGACY_TYPE = 2;
-  uint128 public constant MAX_TRANSFER = 100;
+  uint128 public constant MAX_TRANSFER =  2;
   uint256 public adminFeePercent;
   address public paymentContract;
 
@@ -493,7 +493,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
    */
   function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private view {
     if (distribution_.percent == 0 || distribution_.percent > MAX_PERCENT) revert DistributionAssetInvalid();
-    if (distribution_.user == address(0) || distribution_.user == owner_ || _isContract(distribution_.user)) revert DistributionUserInvalid();
+    if (distribution_.user == address(0) || distribution_.user == owner_) revert DistributionUserInvalid();
   }
 
   /**
@@ -542,13 +542,17 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
 
         symbol = "ETH";
         summary[n] = NotifyLib.ListAsset({listToken: address(0), listAmount: totalAmountEth, listAssetName: symbol});
+        
+        uint256 processedAmountETH = 0;
         for (uint256 i = 0; i < beneficiaries.length; ) {
           uint256 amount = i != beneficiaries.length - 1
             ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / MAX_PERCENT
-            : address(safeAddress).balance;
-          _transferEthToBeneficiary(safeAddress, beneficiaries[i], amount);
+            : distributableEth-processedAmountETH;
+          uint256 amountSent = _transferEthToBeneficiary(safeAddress, beneficiaries[i], amount);
           receipt[i].listAssetName[n] = symbol;
-          receipt[i].listAmount[n] = amount;
+          receipt[i].listAmount[n] = amountSent;
+          processedAmountETH+=amount;
+
           unchecked {
             i++;
           }
@@ -572,14 +576,16 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
           _swapAdminFee(token, actualFeeReceived);
         }
 
+        uint256 processedAmountERC20 = 0;
         for (uint256 j = 0; j < beneficiaries.length; ) {
           uint256 amount = j != beneficiaries.length - 1
             ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / MAX_PERCENT
-            : IERC20(assets_[i]).balanceOf(safeAddress);
+            : distributable - processedAmountERC20;
           if (amount > 0) {
-            _transferErc20ToBeneficiary(token, safeAddress, beneficiaries[j], amount);
+            uint256 amountSent = _transferErc20ToBeneficiary(token, safeAddress, beneficiaries[j], amount);
             receipt[j].listAssetName[i] = symbol;
-            receipt[j].listAmount[i] = amount;
+            receipt[j].listAmount[i] = amountSent;
+            processedAmountERC20+=amount;
           }
           unchecked {
             j++;
@@ -605,7 +611,7 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
    * @param from_ safe wallet address
    * @param to_ beneficiary address
    */
-  function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount) private {
+  function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount) private returns(uint256 amountSent) {
     bytes memory transferErc20Data = abi.encodeWithSignature("transfer(address,uint256)", to_, amount);
     (bool transferErc20Success, bytes memory returnData) = ISafeWallet(from_).execTransactionFromModuleReturnData(
       erc20Address_,
@@ -614,7 +620,9 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
       Enum.Operation.Call
     );
 
-    if (!transferErc20Success || (returnData.length != 0 && !abi.decode(returnData, (bool)))) revert ExecTransactionFromModuleFailed();
+    if (!transferErc20Success || (returnData.length != 0 && !abi.decode(returnData, (bool)))) return 0;
+    return amountSent;
+
   }
 
   /**
@@ -622,21 +630,9 @@ contract TransferLegacy is GenericLegacy, ITransferLegacy {
    * @param from_ safe wallet address
    * @param to_ beneficiary address
    */
-  function _transferEthToBeneficiary(address from_, address to_, uint256 amount) private {
+  function _transferEthToBeneficiary(address from_, address to_, uint256 amount) private returns (uint256 amountSent) {
     bool transferEthSuccess = ISafeWallet(from_).execTransactionFromModule(to_, amount, "", Enum.Operation.Call);
-    if (!transferEthSuccess) revert ExecTransactionFromModuleFailed();
-  }
-
-  /**
-   * @dev check whether addr is a smart contract address or eoa address
-   * @param addr  the address need to check
-   *
-   */
-  function _isContract(address addr) private view returns (bool) {
-    uint256 size;
-    assembly ("memory-safe") {
-      size := extcodesize(addr)
-    }
-    return size > 0;
+    if (!transferEthSuccess) return 0;
+    return amount;
   }
 }

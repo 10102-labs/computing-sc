@@ -129,7 +129,7 @@ contract PremiumAutomation is AutomationCompatibleInterface {
   function addLegacyIfNeed(address[] memory legacyAddresses) external onlyManager {
     for (uint256 i = 0; i < legacyAddresses.length; i++) {
       address legacy = legacyAddresses[i];
-      if (enableNotify[legacy] == false  && _checkGuardInSafeWalletLegacy(legacy) && IPremiumLegacy(legacy).isLive()) {
+      if (enableNotify[legacy] == false  && IPremiumLegacy(legacy).isLive()) {
         legacyContracts.push(legacy);
         enableNotify[legacy] = true;
       }

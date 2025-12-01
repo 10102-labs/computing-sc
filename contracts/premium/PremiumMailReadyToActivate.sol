@@ -28,13 +28,13 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
   //Callback gas limit
   uint32 public gasLimit = 300000;
 
-  uint256 constant READY_TO_ACTIVATE_TO_BENE = 7180118;
+  uint256 constant READY_TO_ACTIVATE_TO_BENE = 7217013;
 
-  uint256 constant READY_TO_ACTIVATE_LAYER2_TO_LAYER1 = 7180042;
-  uint256 constant READY_TO_ACTIVATE_LAYER2_TO_LAYER2 = 7180010;
+  uint256 constant READY_TO_ACTIVATE_LAYER2_TO_LAYER1 = 7217006;
+  uint256 constant READY_TO_ACTIVATE_LAYER2_TO_LAYER2 = 7217004;
 
-  uint256 constant READY_TO_ACTIVATE_LAYER3_TO_LAYER3 = 7179981;
-  uint256 constant READY_TO_ACTIVATE_LAYER3_TO_LAYER12 = 7190049;
+  uint256 constant READY_TO_ACTIVATE_LAYER3_TO_LAYER3 = 7217005;
+  uint256 constant READY_TO_ACTIVATE_LAYER3_TO_LAYER12 = 7217014;
 
   // Custom error type
   error UnexpectedRequestID(bytes32 requestId);
@@ -52,7 +52,7 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
     _;
   }
 
-  constructor () {
+  constructor() {
     _disableInitializers();
   }
 
@@ -89,10 +89,17 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
     emit RequestFulfilled(requestId);
   }
 
-  function sendEmailReadyToActivateToLayer1(string[] memory beneName, string[] memory beneEmail, string memory contractName) external onlyRouter {
+  //To add legacyID, contract address
+  function sendEmailReadyToActivateToLayer1(
+    string[] memory beneName,
+    string[] memory beneEmail,
+    string memory contractName,
+    uint256 legacyId,
+    address contractAddress
+  ) external onlyRouter {
     for (uint256 i = 0; i < beneName.length; i++) {
       if (bytes(beneEmail[i]).length > 0) {
-        _sendEmailReadyToActivateToLayer1(beneName[i], beneEmail[i], contractName);
+        _sendEmailReadyToActivateToLayer1(beneName[i], beneEmail[i], contractName, legacyId, contractAddress);
         _emitSendMail(beneEmail[i], NotifyLib.NotifyType.ReadyToActivate);
       }
     }
@@ -113,13 +120,26 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
     }
   }
 
+  //To add legacyID, contract address
   function sendEmailReadyToActivateLayer2ToLayer2(
     string memory beneName,
     string memory beneEmail,
-    string memory contractName
+    string memory contractName,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyRouter returns (bytes32 requestId) {
-    string memory subject = string.concat("You May Now Activate the [", contractName, "]");
-    string memory params = string.concat("bene_name: '", beneName, "', contract_name: '", contractName, "'");
+    string memory subject = string.concat("You May Now Activate the ", contractName, "");
+    string memory params = string.concat(
+      "bene_name: '",
+      beneName,
+      "', contract_name: '",
+      contractName,
+      "', legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
+    );
     string memory source = string.concat(
       _sendEmailToAddressBegin(beneEmail, subject, READY_TO_ACTIVATE_LAYER2_TO_LAYER2),
       params,
@@ -142,13 +162,27 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
       }
     }
   }
+
+  //To add legacyID, contract address
   function sendEmailReadyToActivateLayer3ToLayer3(
     string memory beneName,
     string memory beneEmail,
-    string memory contractName
+    string memory contractName,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyRouter returns (bytes32 requestId) {
-    string memory subject = string.concat("You May Now Activate the [", contractName, "]");
-    string memory params = string.concat("bene_name: '", beneName, "', contract_name: '", contractName, "'");
+    string memory subject = string.concat("You May Now Activate the ", contractName, "");
+    string memory params = string.concat(
+      "bene_name: '",
+      beneName,
+      "', contract_name: '",
+      contractName,
+      "', legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
+    );
     string memory source = string.concat(
       _sendEmailToAddressBegin(beneEmail, subject, READY_TO_ACTIVATE_LAYER3_TO_LAYER3),
       params,
@@ -166,7 +200,7 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
       authHeader,
       "';",
       "const emailData = { Messages: ",
-      "[ { From: {Email: 'thao.nguyen3@sotatek.com', Name: '10102 Platform',},",
+      "[ { From: {Email: 'app@10102.io', Name: '10102 Platform',},",
       "To: [ {Email: '",
       to,
       "', Name:'',},],",
@@ -200,10 +234,22 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
   function _sendEmailReadyToActivateToLayer1(
     string memory beneName,
     string memory beneEmail,
-    string memory contractName
+    string memory contractName,
+    uint256 legacyId,
+    address contractAddress
   ) internal returns (bytes32 requestId) {
-    string memory subject = string.concat("[", contractName, "] Is Ready to Activate");
-    string memory params = string.concat("bene_name: '", beneName, "',  contract_name: '", contractName, "'");
+    string memory subject = string.concat("", contractName, " Is Ready to Activate");
+    string memory params = string.concat(
+      "bene_name: '",
+      beneName,
+      "',  contract_name: '",
+      contractName,
+      "', legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
+    );
     string memory source = string.concat(_sendEmailToAddressBegin(beneEmail, subject, READY_TO_ACTIVATE_TO_BENE), params, _sendEmailToAddressEnd());
     return _sendRequest(source);
   }
@@ -215,7 +261,7 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
     string memory contractName,
     uint256 timeActiveLayer2
   ) internal returns (bytes32 requestId) {
-    string memory subject = string.concat("[", contractName, "] Is Ready");
+    string memory subject = string.concat("Second-Line Beneficiary Now Eligible to Activate ", contractName, ".");
 
     string memory params = string.concat(
       "bene_name: '",
@@ -225,7 +271,7 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
       contractName,
       "',",
       "    date: new Date(",
-      Strings.toString(timeActiveLayer2*1000), //unixtimestamp in miliseconds
+      Strings.toString(timeActiveLayer2 * 1000), //unixtimestamp in miliseconds
       "), address: '",
       Strings.toHexString(beneAddressLayer2),
       "'"
@@ -247,9 +293,9 @@ contract PremiumMailReadyToActivate is OwnableUpgradeable {
     uint256 activationDate,
     address layer3Addr
   ) internal returns (bytes32 requestId) {
-    string memory subject = string.concat('"', contractName, '" Is Ready');
+    string memory subject = string.concat("Third-Line Beneficiary Now Eligible to Activate ", contractName, ".");
 
-    string memory activationDateStr = Strings.toString(activationDate*1000); //unix timestamp in miliseconds
+    string memory activationDateStr = Strings.toString(activationDate * 1000); //unix timestamp in miliseconds
     string memory layer3AddrStr = Strings.toHexString(layer3Addr);
 
     string memory params = string.concat(

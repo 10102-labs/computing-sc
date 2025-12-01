@@ -25,7 +25,7 @@ contract PremiumMailRouter is OwnableUpgradeable {
     _;
   }
 
-  constructor () {
+  constructor() {
     _disableInitializers();
   }
 
@@ -64,9 +64,18 @@ contract PremiumMailRouter is OwnableUpgradeable {
     string[] memory beneNames,
     string memory contractName,
     uint256 timeCountdown,
-    string[] memory beneEmails
+    string[] memory beneEmails,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyManager {
-    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeActivationToBeneficiary(beneNames, contractName, timeCountdown, beneEmails);
+    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeActivationToBeneficiary(
+      beneNames,
+      contractName,
+      timeCountdown,
+      beneEmails,
+      legacyId,
+      contractAddress
+    );
     mailId += beneEmails.length;
   }
 
@@ -74,9 +83,11 @@ contract PremiumMailRouter is OwnableUpgradeable {
     string[] memory beneNames,
     string[] memory beneEmails,
     string memory contractName,
-    uint256 x_days
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyManager {
-    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeLayer2ToLayer1(beneNames, beneEmails, contractName, x_days);
+    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeLayer2ToLayer1(beneNames, beneEmails, contractName, x_days, legacyId, contractAddress);
   }
 
   function sendEmailBeforeLayer2ToLayer2(
@@ -93,9 +104,11 @@ contract PremiumMailRouter is OwnableUpgradeable {
     string[] memory beneNames,
     string[] memory beneEmails,
     string memory contractName,
-    uint256 x_days
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyManager {
-    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeLayer3ToLayer12(beneNames, beneEmails, contractName, x_days);
+    IPremiumSendMail(mailBeforeActivation).sendEmailBeforeLayer3ToLayer12(beneNames, beneEmails, contractName, x_days, legacyId, contractAddress);
     mailId += beneEmails.length;
   }
 
@@ -110,8 +123,13 @@ contract PremiumMailRouter is OwnableUpgradeable {
   }
 
   //READY TO ACTIVATE
-  function sendEmailReadyToActivateToLayer1(string[] memory beneNames, string[] memory beneEmails, string memory contractName) external onlyManager {
-    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateToLayer1(beneNames, beneEmails, contractName);
+  function sendEmailReadyToActivateToLayer1(
+    string[] memory beneNames, 
+    string[] memory beneEmails, 
+    string memory contractName,   
+    uint256 legacyId,
+    address contractAddress) external onlyManager {
+    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateToLayer1(beneNames, beneEmails, contractName, legacyId, contractAddress);
   }
 
   function sendEmailReadyToActivateLayer2ToLayer1(
@@ -131,8 +149,14 @@ contract PremiumMailRouter is OwnableUpgradeable {
     mailId += beneEmailsLayer1.length;
   }
 
-  function sendEmailReadyToActivateLayer2ToLayer2(string memory beneName, string memory beneEmail, string memory contractName) external onlyManager {
-    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateLayer2ToLayer2(beneName, beneEmail, contractName);
+  function sendEmailReadyToActivateLayer2ToLayer2(
+    string memory beneName, 
+    string memory beneEmail, 
+    string memory contractName,   
+    uint256 legacyId,
+    address contractAddress) external onlyManager
+  {
+    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateLayer2ToLayer2(beneName, beneEmail, contractName, legacyId, contractAddress);
   }
 
   function sendEmailReadyToActivateLayer3ToLayer12(
@@ -146,8 +170,14 @@ contract PremiumMailRouter is OwnableUpgradeable {
     mailId += beneEmails.length;
   }
 
-  function sendEmailReadyToActivateLayer3ToLayer3(string memory beneName, string memory beneEmail, string memory contractName) external onlyManager {
-    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateLayer3ToLayer3(beneName, beneEmail, contractName);
+  function sendEmailReadyToActivateLayer3ToLayer3(
+    string memory beneName, 
+    string memory beneEmail, 
+    string memory contractName,   
+    uint256 legacyId,
+    address contractAddress) external onlyManager 
+  {
+    IPremiumSendMail(mailReadyToActivate).sendEmailReadyToActivateLayer3ToLayer3(beneName, beneEmail, contractName, legacyId, contractAddress);
     mailId++;
   }
 
@@ -197,7 +227,6 @@ contract PremiumMailRouter is OwnableUpgradeable {
     address contractAddress,
     bool remaining
   ) external onlySetting {
-   
     IPremiumSendMail(mailActivated).sendEmailActivatedToBene(
       beneName,
       beneEmail,
@@ -209,6 +238,26 @@ contract PremiumMailRouter is OwnableUpgradeable {
       remaining
     );
     mailId++;
+  }
+
+  function sendActivatedMutisigToOwner(
+    string memory ownerEmail,
+    string memory contractName,
+    address contractAddress,
+    address activatedBy,
+    address safeAddress,
+    string[] memory beneNames,
+    address[] memory beneAddresses
+  ) external onlySetting {
+    IPremiumSendMail(mailActivated).sendActivatedMutisigToOwner(
+      ownerEmail,
+      contractName,
+      contractAddress,
+      activatedBy,
+      safeAddress,
+      beneNames,
+      beneAddresses
+    );
   }
 
   function sendMailOwnerResetToBene(string[] memory beneNames, string[] memory beneEmails, string memory contractName) external onlySetting {
