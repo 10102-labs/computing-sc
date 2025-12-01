@@ -20,17 +20,38 @@ interface IPremiumSendMail {
     string[] memory beneNames,
     string memory contractName,
     uint256 timeCountdown,
-    string[] memory beneEmails
+    string[] memory beneEmails,
+    uint256 legacyId,
+    address contractAddress
   ) external;
 
-  function sendEmailBeforeLayer2ToLayer1(string[] memory beneNames, string[] memory beneEmails, string memory contractName, uint256 x_days) external;
+  function sendEmailBeforeLayer2ToLayer1(
+    string[] memory beneNames,
+    string[] memory beneEmails,
+    string memory contractName,
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
+  ) external;
 
   function sendEmailBeforeLayer2ToLayer2(string memory beneName, string memory beneEmail, string memory contractName, uint256 x_days) external;
 
-  function sendEmailBeforeLayer3ToLayer12(string[] memory beneNames, string[] memory beneEmails, string memory contractName, uint256 x_days) external;
+  function sendEmailBeforeLayer3ToLayer12(
+    string[] memory beneNames,
+    string[] memory beneEmails,
+    string memory contractName,
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
+  ) external;
   function sendEmailBeforeLayer3ToLayer3(string memory beneName, string memory beneEmail, string memory contractName, uint256 x_day) external;
 
-  function sendEmailReadyToActivateToLayer1(string[] memory beneName, string[] memory beneEmail, string memory contractName) external;
+  function sendEmailReadyToActivateToLayer1(
+    string[] memory beneName, 
+    string[] memory beneEmail, 
+    string memory contractName,    
+    uint256 legacyId,
+    address contractAddress) external;
 
   //READY TO ACTIVATE
   function sendEmailReadyToActivateLayer2ToLayer1(
@@ -41,7 +62,12 @@ interface IPremiumSendMail {
     uint256 timeActiveLayer2
   ) external;
 
-  function sendEmailReadyToActivateLayer2ToLayer2(string memory beneName, string memory beneEmail, string memory contractName) external;
+  function sendEmailReadyToActivateLayer2ToLayer2(
+  string memory beneName, 
+  string memory beneEmail, 
+  string memory contractName,    
+  uint256 legacyId,
+  address contractAddress) external;
 
   function sendEmailReadyToActivateLayer3ToLayer12(
     string[] memory beneName,
@@ -51,7 +77,13 @@ interface IPremiumSendMail {
     address layer3Addr
   ) external;
 
-  function sendEmailReadyToActivateLayer3ToLayer3(string memory beneName, string memory beneEmail, string memory contractName) external;
+  function sendEmailReadyToActivateLayer3ToLayer3(
+    string memory beneName, 
+    string memory beneEmail, 
+    string memory contractName,
+    uint256 legacyId,
+    address contractAddress
+    ) external;
 
   function sendEmailActivatedToLayer1(
     string memory beneName,
@@ -97,5 +129,15 @@ interface IPremiumSendMail {
     NotifyLib.BeneReceived[] memory _listBeneReceived,
     address contractAddress,
     bool remaining
+  ) external;
+
+  function sendActivatedMutisigToOwner(
+    string memory ownerEmail,
+    string memory contractName,
+    address contractAddress,
+    address activatedBy,
+    address safeAddress,
+    string[] memory beneNames,
+    address[] memory beneAddresses
   ) external;
 }

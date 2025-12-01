@@ -31,16 +31,16 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
 
 
   // email invoke name
-  uint256 constant BEFORE_ACTIVATION_TO_OWNER = 7180104;
-  uint256 constant BEFORE_ACTIVATION_TO_BENEFICIARY = 7180073;
+  uint256 constant BEFORE_ACTIVATION_TO_OWNER = 7217001;
+  uint256 constant BEFORE_ACTIVATION_TO_BENEFICIARY = 7269992;
 
-  uint256 constant BEFORE_LAYER2_TO_OWNER = 7179589;
-  uint256 constant BEFORE_LAYER2_TO_LAYER1 = 7180055;
-  uint256 constant BEFORE_LAYER2_TO_LAYER2 = 7180019;
+  uint256 constant BEFORE_LAYER2_TO_OWNER = 7217002;
+  uint256 constant BEFORE_LAYER2_TO_LAYER1 = 7216997;
+  uint256 constant BEFORE_LAYER2_TO_LAYER2 = 7217000;
 
-  uint256 constant BEFORE_LAYER3_TO_OWNER = 7180086;
-  uint256 constant BEFORE_LAYER3_TO_LAYER12 = 7179998;
-  uint256 constant BEFORE_LAYER3_TO_LAYER3 = 7179988;
+  uint256 constant BEFORE_LAYER3_TO_OWNER = 7216998;
+  uint256 constant BEFORE_LAYER3_TO_LAYER12 = 7216999;
+  uint256 constant BEFORE_LAYER3_TO_LAYER3 = 7217003;
 
   // Custom error type
   error UnexpectedRequestID(bytes32 requestId);
@@ -107,31 +107,35 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     _sendEmailBeforeActivationToOwner(ownerName, contractName, lastTx, bufferTime, listBene, ownerEmail);
     _emitSendMail(ownerEmail, NotifyLib.NotifyType.BeforeActivation);
   }
-
+  //To add legacyID, contract address 
   function sendEmailBeforeActivationToBeneficiary(
     string[] memory beneNames,
     string memory contractName,
     uint256 timeCountdown,
-    string[] memory beneEmails
+    string[] memory beneEmails,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyRouter {
     for (uint256 i = 0; i < beneNames.length; i++) {
       if (bytes(beneEmails[i]).length > 0) {
-        _sendEmailBeforeActivationToBeneficiary(beneNames[i], contractName, timeCountdown, beneEmails[i]);
+        _sendEmailBeforeActivationToBeneficiary(beneNames[i], contractName, timeCountdown, beneEmails[i], legacyId, contractAddress);
         _emitSendMail(beneEmails[i], NotifyLib.NotifyType.BeforeActivation);
       }
     }
   }
 
-
+  //To add legacyID, contract address 
   function sendEmailBeforeLayer2ToLayer1(
     string [] memory beneNames,
     string [] memory beneEmails,
     string memory contractName,
-    uint256 x_days
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyRouter {
     for (uint256 i = 0; i < beneNames.length; i++) {
       if (bytes(beneEmails[i]).length > 0) {
-        _sendEmailBeforeLayer2ToLayer1(beneNames[i], beneEmails[i], contractName, x_days);
+        _sendEmailBeforeLayer2ToLayer1(beneNames[i], beneEmails[i], contractName, x_days, legacyId, contractAddress);
         _emitSendMail(beneEmails[i], NotifyLib.NotifyType.BeforeLayer2);
       }
     }
@@ -142,16 +146,18 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     _emitSendMail(beneEmail, NotifyLib.NotifyType.BeforeLayer2);
   }
 
-
+  // to add legacy id, contract address
   function sendEmailBeforeLayer3ToLayer12(
     string [] memory beneNames,
     string [] memory beneEmails,
     string memory contractName,
-    uint256 x_day
+    uint256 x_day,
+    uint256 legacyId,
+    address contractAddress
   ) external onlyRouter {
     for (uint256 i = 0; i < beneNames.length; i++) {
       if (bytes(beneEmails[i]).length > 0) {
-        _sendEmailBeforeLayer3ToLayer12(beneNames[i], beneEmails[i], contractName, x_day);
+        _sendEmailBeforeLayer3ToLayer12(beneNames[i], beneEmails[i], contractName, x_day, legacyId, contractAddress);
         _emitSendMail(beneEmails[i], NotifyLib.NotifyType.BeforeLayer3);
       }
     }
@@ -176,7 +182,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       authHeader,
       "';",
       "const emailData = { Messages: ",
-      "[ { From: {Email: 'thao.nguyen3@sotatek.com', Name: '10102 Platform',},",
+      "[ { From: {Email: 'app@10102.io', Name: '10102 Platform',},",
       "To: [ {Email: '",
       to,
       "', Name:'',},],",
@@ -219,7 +225,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     address[] memory listBene,
     string memory ownerEmail
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("Reminder - [", contractName, "] Nearing Activation");
+    string memory subject = string.concat("Reminder - ", contractName, " Nearing Activation");
     string memory listString = "list: [";
     for (uint256 i = 0; i < listBene.length; i++) {
       listString = string.concat(listString, "'", Strings.toHexString(listBene[i]), "'");
@@ -251,9 +257,12 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     string memory beneName,
     string memory contractName,
     uint256 timeCountdown,
-    string memory beneEmail
+    string memory beneEmail,
+    uint256 legacyId,
+    address contractAddress
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("Get Ready - [", contractName, "] Will Be Ready to Activate Soon");
+    
+    string memory subject = string.concat(Strings.toString(timeCountdown), " day(s) until ", contractName, " is ready to activate.");
 
     string memory params = string.concat(
       "bene_name: '",
@@ -261,7 +270,12 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       "', contract_name: '",
       contractName,
       "',  x_day_before_active: ",
-      Strings.toString(timeCountdown)
+      Strings.toString(timeCountdown),
+      ", legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
     );
 
     string memory source = string.concat(
@@ -282,9 +296,11 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     string memory beneName,
     string memory beneEmail,
     string memory contractName,
-    uint256 x_days
+    uint256 x_days,
+    uint256 legacyId,
+    address contractAddress
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("Reminder - Second-Line Activation for - [", contractName, "] Approaching");
+    string memory subject = string.concat("Reminder - Second-Line Activation for - ", contractName, " Approaching");
 
     string memory params = string.concat(
       "bene_name: '",
@@ -295,7 +311,11 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       "',",
       "    x_days: '",
       Strings.toString(x_days),
-      " day(s)',"
+      " day(s)', legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
     );
 
     string memory source = string.concat(_sendEmailToAddressBegin(beneEmail, subject, BEFORE_LAYER2_TO_LAYER1), params, _sendEmailToAddressEnd());
@@ -308,7 +328,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     string memory contractName,
     uint256 x_days
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("You May Soon Be Eligible to Activate [", contractName, "]");
+    string memory subject = string.concat("You May Soon Be Eligible to Activate ", contractName, "");
 
     string memory params = string.concat("bene_name: '", beneName, "',  contract_name: '", contractName, "', x_days: '", Strings.toString(x_days), " day(s)'");
 
@@ -325,9 +345,11 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     string memory beneName,
     string memory beneEmail,
     string memory contractName,
-    uint256 x_day
+    uint256 x_day,
+    uint256 legacyId,
+    address contractAddress
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("Reminder - Third-Line Activation for [", contractName, "] Approaching");
+    string memory subject = string.concat("Reminder - Third-Line Activation for ", contractName, " Approaching");
 
     string memory params = string.concat(
       "bene_name: '",
@@ -336,7 +358,11 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       contractName,
       "',  x_days: '",
       Strings.toString(x_day),
-      " day(s)',"
+      " day(s)', legacy_id: '",
+      Strings.toString(legacyId),
+      "', contract_address: '",
+      Strings.toHexString(contractAddress),
+      "'"
     );
 
     string memory source = string.concat(_sendEmailToAddressBegin(beneEmail, subject, BEFORE_LAYER3_TO_LAYER12), params, _sendEmailToAddressEnd());
@@ -350,7 +376,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
     string memory contractName,
     uint256 x_day
   ) public returns (bytes32 requestId) {
-    string memory subject = string.concat("You May Soon Be Eligible to Activate [", contractName, "]");
+    string memory subject = string.concat("You May Soon Be Eligible to Activate ", contractName, "");
 
     string memory params = string.concat(
       "bene_name: '",
@@ -359,7 +385,7 @@ contract PremiumMailBeforeActivation is OwnableUpgradeable {
       contractName,
       "',  x_days: '",
       Strings.toString(x_day),
-      " day(s)',"
+      " day(s)'"
     );
 
     string memory source = string.concat(_sendEmailToAddressBegin(beneEmail, subject, BEFORE_LAYER3_TO_LAYER3), params, _sendEmailToAddressEnd());

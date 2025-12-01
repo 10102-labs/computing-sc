@@ -150,7 +150,8 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
       mainConfig_.beneficiaries,
       extraConfig_,
       guardAddress,
-      msg.sender
+      msg.sender,
+      mainConfig_.nickNames
     );
 
     IMultisigLegacy(legacyAddress).setLegacyName(mainConfig_.name);
@@ -196,7 +197,8 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     uint256 numberOfBeneficiaries = IMultisigLegacy(legacyAddress).setLegacyBeneficiaries(
       msg.sender,
       mainConfig_.beneficiaries,
-      extraConfig_.minRequiredSignatures
+      extraConfig_.minRequiredSignatures,
+      mainConfig_.nickNames
     );
 
     //Check min require signatures
@@ -232,7 +234,7 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     if (beneficiaries_.length != nickName_.length || beneficiaries_.length == 0) revert BeneficiariesInvalid();
 
     //Set beneficiaries[]
-    uint256 numberOfBeneficiaries = IMultisigLegacy(legacyAddress).setLegacyBeneficiaries(msg.sender, beneficiaries_, minRequiredSignatures_);
+    uint256 numberOfBeneficiaries = IMultisigLegacy(legacyAddress).setLegacyBeneficiaries(msg.sender, beneficiaries_, minRequiredSignatures_, nickName_);
 
     //Check min require signatures
     if (minRequiredSignatures_ == 0 || minRequiredSignatures_ > numberOfBeneficiaries) revert MinRequiredSignaturesInvalid();
@@ -280,18 +282,18 @@ contract MultisigLegacyRouter is LegacyRouter, LegacyFactory, ReentrancyGuardUpg
     address legacyAddress = _checkLegacyExisted(legacyId_);
     address guardAddress = _checkGuardExisted(legacyId_);
 
-
-    //Active legacy
-    (address[] memory newSigners, uint256 newThreshold) = IMultisigLegacy(legacyAddress).activeLegacy(guardAddress);
-
-    emit MultisigLegacyActivated(legacyId_, newSigners, newThreshold, true, block.timestamp);
-    
     //trigger reminder
     try 
     IPremiumSetting(premiumSetting).triggerActivationMultisig(legacyAddress) 
     {} catch {
       emit EmailActivatedNotCompleted(legacyAddress);
     }
+
+    //Active legacy
+    (address[] memory newSigners, uint256 newThreshold) = IMultisigLegacy(legacyAddress).activeLegacy(guardAddress);
+
+    emit MultisigLegacyActivated(legacyId_, newSigners, newThreshold, true, block.timestamp);
+    
   }
 
 }

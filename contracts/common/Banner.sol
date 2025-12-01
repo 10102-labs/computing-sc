@@ -185,4 +185,15 @@ contract Banner is AccessControlUpgradeable {
         if( len < minLength) revert InvalidLength(str, minLength, maxLength);
         if( len > maxLength) revert InvalidLength(str, minLength, maxLength);
     }
+
+    function setMaxLengths(    
+    uint16[3] calldata nameMax,
+    uint16[3] calldata descMax,
+    uint16[3] calldata ctaMax,
+    uint16[3] calldata ctaLinkMax) external onlyRole(OPERATOR)  {
+        NAME_MAX = nameMax;
+        DESC_MAX = descMax;
+        CTA_MAX = ctaMax;
+        CTA_LINK_MAX = ctaLinkMax;
+    }
 }

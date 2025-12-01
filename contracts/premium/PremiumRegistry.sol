@@ -30,6 +30,8 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
 
   address public payment;
 
+  uint256 public constant ORACLE_STALE_LIMIT = 24 * 3600;
+
   /* EVENTS */
   event PlanUpdated(uint256 plan, uint256 priceUSD, uint256 duration, string name, string description, string feature);
   event PlanSubcribed(address indexed user, uint256 plan, string paymentMethod, uint256 value);
@@ -274,6 +276,6 @@ contract PremiumRegistry is OwnableUpgradeable, AccessControlUpgradeable {
   function _validateRoundData(int256 answer, uint256 updatedAt) internal view {
     require(answer > 0, "Invalid price");
     require(updatedAt > 0, "Round not complete");
-    require(block.timestamp - updatedAt <= 3600, "Price data is stale");
+    require(block.timestamp - updatedAt <= ORACLE_STALE_LIMIT, "Price data is stale");
   }
 }

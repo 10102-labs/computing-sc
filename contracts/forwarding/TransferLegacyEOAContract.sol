@@ -41,7 +41,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
 
   /* State variable */
   uint128 public constant LEGACY_TYPE = 3;
-  uint128 public constant MAX_TRANSFER = 100;
+  uint128 public constant MAX_TRANSFER = 2;
   uint256 public adminFeePercent; // Store fee percentage at initialization
   address public paymentContract; // Store address for fee transfers
   address public uniswapRouter; // Uniswap router address for swapping
@@ -454,8 +454,8 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    * @param assets_ erc20 token list
    * @param isETH_ is native token
    */
-  function activeLegacy(address[] calldata assets_, bool isETH_, address bene) external onlyRouter onlyLive {
-    if (_checkActiveLegacy()) {
+  function activeLegacy(address[] calldata assets_, bool isETH_, address bene) external onlyRouter  {
+    if (_checkActiveLegacy() && _isLive == 1) {
       if (getIsActiveLegacy() == 1) {
         _setLegacyToInactive();
       }
@@ -535,7 +535,7 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    */
   function _checkDistribution(address owner_, TransferLegacyStruct.Distribution calldata distribution_) private view {
     if (distribution_.percent == 0 || distribution_.percent > MAX_PERCENT) revert DistributionAssetInvalid();
-    if (distribution_.user == address(0) || distribution_.user == owner_ || _isContract(distribution_.user)) revert DistributionAssetInvalid();
+    if (distribution_.user == address(0) || distribution_.user == owner_) revert DistributionAssetInvalid();
   }
 
   /**
@@ -578,13 +578,16 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
         if (fee > 0) {
           _transferEthToBeneficiary(paymentContract, fee);
         }
+
+        uint256 processedAmountETH = 0;
         for (uint256 i = 0; i < beneficiaries.length ; ) {
           uint256 amount = i != beneficiaries.length - 1
             ? (distributableEth * getDistribution(beneLayer, beneficiaries[i])) / MAX_PERCENT
-            : address(this).balance;
-          _transferEthToBeneficiary(beneficiaries[i], amount);
+            : distributableEth - processedAmountETH;
+          uint256 sentAmount = _transferEthToBeneficiary(beneficiaries[i], amount);
+          processedAmountETH += amount;
           receipt[i].listAssetName[n] = "ETH";
-          receipt[i].listAmount[n] = amount;
+          receipt[i].listAmount[n] = sentAmount;
           unchecked {
             i++;
           }
@@ -597,28 +600,30 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
       uint256 allowanceAmountErc20 = IERC20(token).allowance(ownerAddress, address(this));
       uint256 balanceAmountErc20 = IERC20(token).balanceOf(ownerAddress);
       uint256 totalAmount = balanceAmountErc20 > allowanceAmountErc20 ? allowanceAmountErc20 : balanceAmountErc20;
-      uint256 transferredAmountERC20 = 0;
       if (totalAmount > 0) {
         string memory symbol = IERC20Metadata(token).symbol();
         summary[i] = NotifyLib.ListAsset({listToken: token, listAmount: totalAmount, listAssetName: symbol});
 
         uint256 fee = (totalAmount * adminFeePercent) / 10000;
         uint256 distributable = totalAmount - fee;
-
+      
         if (fee > 0) {
           uint256 balanceBefore = IERC20(token).balanceOf(address(this));
           IERC20(token).safeTransferFrom(ownerAddress, address(this), fee);
           uint256 actualFeeReceived =  IERC20(token).balanceOf(address(this)) - balanceBefore;
           _swapAdminFee(token, actualFeeReceived);
         }
+        
+        uint256 processedAmountERC20 = 0;
         for (uint256 j = 0; j < beneficiaries.length; ) {
           uint256 amount = j != beneficiaries.length - 1
             ? (distributable * getDistribution(beneLayer, beneficiaries[j])) / MAX_PERCENT
-            : distributable - transferredAmountERC20;
-          transferredAmountERC20 += amount;
-          _transferErc20ToBeneficiary(token, ownerAddress, beneficiaries[j], amount);
+            : distributable - processedAmountERC20;
+          uint256 amountSent = _transferErc20ToBeneficiary(token, ownerAddress, beneficiaries[j], amount);
           receipt[j].listAssetName[i] = symbol;
-          receipt[j].listAmount[i] = amount;
+          receipt[j].listAmount[i] = amountSent;
+          processedAmountERC20 += amount;
+
           unchecked {
             j++;
           }
@@ -646,27 +651,26 @@ contract TransferEOALegacy is GenericLegacy, ITransferEOALegacy {
    * @param from_ safe wallet address
    * @param to_ beneficiary address
    */
-  function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount_) private {
-    IERC20(erc20Address_).safeTransferFrom(from_, to_, amount_);
-  }
-
-  /**
-   * @dev transfer eth to beneficiaries
-   * @param to_ beneficiary address
-   */
-  function _transferEthToBeneficiary(address to_, uint256 amount_) private {
-    payable(to_).transfer(amount_);
-  }
-
-  /**
-   * @dev check whether addr is a smart contract address or eoa address
-   * @param addr  the address need to check
-   */
-  function _isContract(address addr) private view returns (bool) {
-    uint256 size;
-    assembly ("memory-safe") {
-      size := extcodesize(addr)
+  function _transferErc20ToBeneficiary(address erc20Address_, address from_, address to_, uint256 amount_) private returns(uint256 amountSent) {
+    try 
+    IERC20(erc20Address_).transferFrom(from_, to_, amount_) {
+      return amount_;
+    } catch {
+      return 0;
     }
-    return size > 0;
   }
+
+ /**
+ * @dev transfer eth to beneficiaries
+ * @param to_ beneficiary address
+ * @param amount_ amount of ETH to send
+ * @return amountSent amount actually sent (0 if failed)
+ */
+function _transferEthToBeneficiary(address to_, uint256 amount_) 
+    private 
+    returns (uint256 amountSent) 
+{
+    (bool success, ) = payable(to_).call{value: amount_}("");
+    return success ? amount_ : 0;
+}
 }

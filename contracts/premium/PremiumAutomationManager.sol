@@ -233,27 +233,30 @@ contract PremiumAutomationManager is OwnableUpgradeable {
   function _handleReadyToActivate(address legacy) internal {
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
     // send email to layer 1 only
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (, string [] memory beneEmails, string [] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
-    premiumSendMail.sendEmailReadyToActivateToLayer1(beneNames, beneEmails, contractName);
+    premiumSendMail.sendEmailReadyToActivateToLayer1(beneNames, beneEmails, contractName, legacyId, legacy);
   }
 
   function _handleReadyToActivateLayer2(address legacy) internal {
     // send email to layer 1 
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (, string [] memory beneEmails, string [] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
     (address layer2Address,string memory layerEmail , string memory layer2Name) = IPremiumSetting(premiumSetting).getSecondLineData(legacy);
     (, uint256 t2, ) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
     IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer2ToLayer1(beneNames, beneEmails, layer2Address, contractName, t2);
-    IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer2ToLayer2(layer2Name, layerEmail, contractName);
+    IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer2ToLayer2(layer2Name, layerEmail, contractName, legacyId, legacy);
   }
 
   function _handleReadyToActivateLayer3(address legacy) internal {
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (, string [] memory beneEmails, string [] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
     (, string memory layer2Email, string memory layer2Name) = IPremiumSetting(premiumSetting).getSecondLineData(legacy);
     (address layer3Address, string memory layer3Email, string memory layer3Name) = IPremiumSetting(premiumSetting).getThirdLineData(legacy);
     (, uint256 t3, ) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
-    IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer3ToLayer3(layer3Name, layer3Email, contractName);
+    IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer3ToLayer3(layer3Name, layer3Email, contractName, legacyId, legacy);
     IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer3ToLayer12(beneNames, beneEmails, contractName, t3, layer3Address);
     if (bytes(layer2Email).length != 0) {
       IPremiumSendMail(premiumSendMail).sendEmailReadyToActivateLayer3ToLayer12(
@@ -265,6 +268,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
 
   function _handleBeforeActivation(address legacy) internal {
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (uint256 t1, , ) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
     (string memory ownerName, string memory ownerEmail, ) = IPremiumSetting(premiumSetting).getUserData(IPremiumLegacy(legacy).creator());
     (, string[] memory beneEmails, string[] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
@@ -277,12 +281,13 @@ contract PremiumAutomationManager is OwnableUpgradeable {
 
     // 2.to beneficiary
     uint256 timeCountdown = t1 > lastTimestamp ? (t1 - lastTimestamp) / 86400 : 0;
-    premiumSendMail.sendEmailBeforeActivationToBeneficiary(beneNames, contractName, timeCountdown, beneEmails);
+    premiumSendMail.sendEmailBeforeActivationToBeneficiary(beneNames, contractName, timeCountdown, beneEmails, legacyId, legacy);
   }
 
   function _handleBeforeLayer2(address legacy) internal {
     //prepare data
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (, uint256 t2, ) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
     uint256 dayTillActivate = t2 > block.timestamp ? (t2 - block.timestamp) / 86400 : 0;
     (, string[] memory beneEmails, string[] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
@@ -290,7 +295,7 @@ contract PremiumAutomationManager is OwnableUpgradeable {
 
 
     //2.to layer1
-    premiumSendMail.sendEmailBeforeLayer2ToLayer1(beneNames, beneEmails, contractName, dayTillActivate);
+    premiumSendMail.sendEmailBeforeLayer2ToLayer1(beneNames, beneEmails, contractName, dayTillActivate, legacyId, legacy);
 
     //3.to layer2
     if (bytes(layer2Email).length != 0) {
@@ -302,17 +307,18 @@ contract PremiumAutomationManager is OwnableUpgradeable {
   function _handleBeforeLayer3(address legacy) internal {
     //prepare data
     string memory contractName = IPremiumLegacy(legacy).getLegacyName();
+    uint256 legacyId = IPremiumLegacy(legacy).getLegacyId();
     (, , uint256 t3) = IPremiumLegacy(legacy).getTriggerActivationTimestamp();
     (, string memory layer2Email, string memory layer2Name) = IPremiumSetting(premiumSetting).getSecondLineData(legacy);
     (, string memory layer3Email, string memory layer3Name) = IPremiumSetting(premiumSetting).getThirdLineData(legacy);
     (, string [] memory beneEmails, string [] memory beneNames) = IPremiumSetting(premiumSetting).getBeneficiaryData(legacy);
     uint256 dayTillActivate = t3 > block.timestamp  ? (t3 - block.timestamp) / 86400 : 0;
     //1.to layer1
-    premiumSendMail.sendEmailBeforeLayer3ToLayer12(beneNames, beneEmails, contractName, dayTillActivate);
+    premiumSendMail.sendEmailBeforeLayer3ToLayer12(beneNames, beneEmails, contractName, dayTillActivate, legacyId, legacy);
 
     //2.to layer2
     if (bytes(layer2Email).length != 0) {
-      premiumSendMail.sendEmailBeforeLayer3ToLayer12(ArrayUtils.makeStringArray(layer2Name), ArrayUtils.makeStringArray(layer2Email), contractName, dayTillActivate);
+      premiumSendMail.sendEmailBeforeLayer3ToLayer12(ArrayUtils.makeStringArray(layer2Name), ArrayUtils.makeStringArray(layer2Email), contractName, dayTillActivate, legacyId, legacy);
     }
 
     //3.to layer3
