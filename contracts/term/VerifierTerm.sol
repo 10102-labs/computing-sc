@@ -30,8 +30,8 @@ contract EIP712LegacyVerifier is Initializable, ReentrancyGuardUpgradeable, Owna
   error AlreadyInit();
 
   string private constant MESSAGE_PREFIX = "By proceeding with creating a new contract, I agree to 10102's Terms of Service";
-  uint256 private constant MAX_PAST_OFFSET = 10 minutes;
-  uint256 private constant MAX_FUTURE_OFFSET = 5 minutes;
+  uint256 private constant MAX_PAST_OFFSET = 30 minutes;
+  uint256 private constant MAX_FUTURE_OFFSET = 30 minutes;
 
   constructor () {
     _disableInitializers();
