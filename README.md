@@ -9,7 +9,7 @@ Copyright (c) 2025 **10102**. All rights reserved.
 This software and associated documentation files are **not** licensed under any open-source license. No part of this repository may be copied, modified, distributed, or used for commercial purposes without the express written permission of the copyright holder.
 
 
-## ⚠️ Disclaimer: Use at Your Own Risk
+## ⚠️ Disclaimer: use at your own risk
 
 **IMPORTANT:** The smart contracts in this repository are provided "as is", without warranty of any kind, express or implied. 
 
@@ -19,7 +19,7 @@ This software and associated documentation files are **not** licensed under any 
 
 # 🧪 Project Structure
 ```
-├── [LICENSE.md](./LICENSE.md)
+├── [LICENSE](./LICENSE.md)
 ├── README.md
 ├── contract-addresses.json     # Deployed contract addresses
 ├── contracts
