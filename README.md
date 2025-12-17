@@ -19,7 +19,7 @@ This software and associated documentation files are **not** licensed under any 
 
 # 🧪 Project Structure
 ```
-├── LICENSE
+├── [LICENSE.md](./LICENSE.md)
 ├── README.md
 ├── contract-addresses.json     # Deployed contract addresses
 ├── contracts
