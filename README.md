@@ -40,7 +40,7 @@ The **Computing** ecosystem is a modular suite of smart contracts centered aroun
 ## 🧪 Project Structure
 
 ```text
-├── [LICENSE.md](./LICENSE.md)
+├── LICENSE.md
 ├── README.md
 ├── SECURITY.md
 ├── contract-addresses.json     # Deployed contract addresses
